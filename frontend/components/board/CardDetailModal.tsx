@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useRef, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { get, post } from "@/lib/apiClient";
+import { ApiError } from "@/lib/errors";
 import { BaseModal } from "@/components/shared/BaseModal";
 import { BaseButton } from "@/components/shared/BaseButton";
 import { CommentList, type Comment } from "@/components/board/CommentList";
@@ -14,38 +16,29 @@ export interface CardDetail {
   id: string;
   title: string;
   description?: string | null;
-  assignee?: string | null;    // display name of the assignee, if available
-  dueDate?: string | null;     // ISO 8601 date string, e.g. "2024-03-15"
+  assignee?: string | null;
+  dueDate?: string | null;
 }
 
 export interface CardDetailModalProps {
-  /** Whether the modal is visible. */
   isOpen: boolean;
-  /** Called when the user closes the modal. */
   onClose: () => void;
-  /** The card to display. */
   card: CardDetail;
   /**
-   * Comments to display, pre-fetched by the parent.
-   * The parent is responsible for refreshing this list after a new comment
-   * is successfully created (call onCommentCreated or refetch externally).
+   * Optional initial comments passed by the parent.  When the modal opens it
+   * will immediately refetch comments from the API; this prop seeds the list
+   * while the fetch is in flight so there is no flash of empty content.
    */
-  comments: Comment[];
-  /**
-   * Called with the newly created comment after a successful POST.
-   * The parent can use this to append the comment to its local state without
-   * a full refetch.
-   */
+  comments?: Comment[];
   onCommentCreated?: (comment: Comment) => void;
 }
 
 // ---------------------------------------------------------------------------
-// API helper — isolated fetch so the component stays presentation-focused
+// API helpers — use apiClient so base URL, auth header, and error typing are
+// handled centrally. No raw fetch calls in this file.
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
-
-interface CreatedComment {
+interface CommentApiItem {
   id: string;
   card_id: string;
   author_id: string;
@@ -54,33 +47,31 @@ interface CreatedComment {
   updated_at: string;
 }
 
-async function postComment(
+/** Fetch the comment list for a card. */
+async function fetchComments(
+  token: string,
+  cardId: string,
+): Promise<Comment[]> {
+  const items = await get<CommentApiItem[]>(`/api/cards/${cardId}/comments`, {
+    token,
+  });
+  return items.map((c) => ({
+    id: c.id,
+    // author_id is a UUID; a richer display name mapping can be added when the
+    // API returns author display names.
+    authorName: c.author_id,
+    body: c.body,
+    createdAt: c.created_at,
+  }));
+}
+
+/** POST a new comment and return the created item. */
+async function createComment(
   token: string,
   cardId: string,
   body: string,
-): Promise<CreatedComment> {
-  const res = await fetch(`${API_BASE}/api/cards/${cardId}/comments`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ body }),
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    // Preserve the user's input on failure (frontend.md §8.1)
-    const json = (await res.json().catch(() => null)) as {
-      error?: { message?: string };
-    } | null;
-    throw new Error(
-      json?.error?.message ?? `Failed to post comment (${res.status})`,
-    );
-  }
-
-  const json = (await res.json()) as { data: CreatedComment };
-  return json.data;
+): Promise<CommentApiItem> {
+  return post<CommentApiItem>(`/api/cards/${cardId}/comments`, { body }, { token });
 }
 
 // ---------------------------------------------------------------------------
@@ -130,14 +121,11 @@ function CommentForm({ cardId, onCommentCreated }: CommentFormProps) {
     setIsSubmitting(true);
 
     try {
-      const created = await postComment(token, cardId, trimmedBody);
+      // POST /api/cards/<cardId>/comments via apiClient
+      const created = await createComment(token, cardId, trimmedBody);
 
-      // Map the API response to the Comment shape CommentList expects.
       const newComment: Comment = {
         id: created.id,
-        // The API returns author_id (UUID). We use currentUser.email as the
-        // display name fallback; a richer mapping can be added when the API
-        // returns author display names.
         authorName: currentUser?.email ?? "You",
         body: created.body,
         createdAt: created.created_at,
@@ -145,11 +133,15 @@ function CommentForm({ cardId, onCommentCreated }: CommentFormProps) {
 
       onCommentCreated(newComment);
       setBody("");
-      // Preserve focus in the textarea so the user can type another comment.
       textareaRef.current?.focus();
     } catch (err: unknown) {
+      // Surface the ApiError message if available; otherwise a generic string.
       setError(
-        err instanceof Error ? err.message : "Failed to post comment.",
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Failed to post comment.",
       );
     } finally {
       setIsSubmitting(false);
@@ -185,11 +177,7 @@ function CommentForm({ cardId, onCommentCreated }: CommentFormProps) {
       />
 
       {error && (
-        <p
-          id="comment-body-error"
-          role="alert"
-          className="text-xs text-destructive"
-        >
+        <p id="comment-body-error" role="alert" className="text-xs text-destructive">
           {error}
         </p>
       )}
@@ -222,32 +210,69 @@ function CommentForm({ cardId, onCommentCreated }: CommentFormProps) {
 /**
  * Modal that displays card details and an inline comment thread.
  *
- * Composition:
- *   BaseModal (dialog shell + accessibility)
- *   └── Card metadata section (title, description, assignee, due date)
- *   └── CommentList (existing component, receives comments as prop)
- *         └── footer slot: CommentForm (controlled textarea + BaseButton)
+ * On open: calls GET /api/cards/<id>/comments via apiClient and populates the
+ * comment list from the server.  The optional `comments` prop seeds the list
+ * while the fetch is in flight.
  *
- * Uses `"use client"` because it manages comment input state and reads
- * AuthContext for the token.
+ * On submit: calls POST /api/cards/<id>/comments via apiClient and appends
+ * the new comment optimistically without a full refetch.
+ *
+ * Uses `"use client"` because it manages comment state and reads AuthContext.
  */
 export function CardDetailModal({
   isOpen,
   onClose,
   card,
-  comments,
+  comments: initialComments = [],
   onCommentCreated,
 }: CardDetailModalProps) {
-  // Local optimistic comment list — starts from the parent's prop and grows
-  // as new comments are submitted.  On close the parent is authoritative.
-  const [localComments, setLocalComments] = useState<Comment[]>(comments);
+  const { token } = useAuth();
 
-  // Sync when the parent refreshes the list (e.g. after re-fetch)
-  // We use a simple reference comparison; a more robust solution would use
-  // a key prop on the modal to fully reset state.
-  if (comments !== localComments && !isOpen) {
-    setLocalComments(comments);
-  }
+  const [localComments, setLocalComments] = useState<Comment[]>(initialComments);
+  const [isFetchingComments, setIsFetchingComments] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Fetch comments from the server each time the modal opens.
+  useEffect(() => {
+    if (!isOpen || !token) return;
+
+    let cancelled = false;
+    setIsFetchingComments(true);
+    setFetchError(null);
+
+    // GET /api/cards/<card.id>/comments
+    fetchComments(token, card.id)
+      .then((data) => {
+        if (!cancelled) setLocalComments(data);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setFetchError(
+            err instanceof ApiError
+              ? err.message
+              : err instanceof Error
+                ? err.message
+                : "Failed to load comments.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsFetchingComments(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, token, card.id]);
+
+  // Reset to initial prop when the modal closes so stale data doesn't flash
+  // on next open before the fetch completes.
+  useEffect(() => {
+    if (!isOpen) {
+      setLocalComments(initialComments);
+      setFetchError(null);
+    }
+  }, [isOpen, initialComments]);
 
   function handleCommentCreated(comment: Comment) {
     setLocalComments((prev) => [...prev, comment]);
@@ -263,13 +288,7 @@ export function CardDetailModal({
     : null;
 
   return (
-    <BaseModal
-      isOpen={isOpen}
-      onClose={onClose}
-      title={card.title}
-      maxWidth="max-w-xl"
-    >
-      {/* ---- Card metadata ---- */}
+    <BaseModal isOpen={isOpen} onClose={onClose} title={card.title} maxWidth="max-w-xl">
       <div className="flex flex-col gap-4">
         {/* Meta row: assignee + due date */}
         {(card.assignee ?? card.dueDate) && (
@@ -295,24 +314,31 @@ export function CardDetailModal({
             {card.description}
           </p>
         ) : (
-          <p className="text-sm text-muted-foreground italic">
-            No description.
-          </p>
+          <p className="text-sm text-muted-foreground italic">No description.</p>
         )}
 
-        {/* Divider */}
         <hr className="border-border" />
 
-        {/* ---- Comments ---- */}
-        <CommentList
-          comments={localComments}
-          footer={
-            <CommentForm
-              cardId={card.id}
-              onCommentCreated={handleCommentCreated}
-            />
-          }
-        />
+        {/* Comments — loading / error / list */}
+        {isFetchingComments ? (
+          <p className="text-xs text-muted-foreground" aria-live="polite">
+            Loading comments…
+          </p>
+        ) : fetchError ? (
+          <p role="alert" className="text-xs text-destructive">
+            {fetchError}
+          </p>
+        ) : (
+          <CommentList
+            comments={localComments}
+            footer={
+              <CommentForm
+                cardId={card.id}
+                onCommentCreated={handleCommentCreated}
+              />
+            }
+          />
+        )}
       </div>
     </BaseModal>
   );
