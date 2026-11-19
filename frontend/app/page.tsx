@@ -1,21 +1,63 @@
 import { Suspense } from "react";
-import { BoardsGrid } from "@/components/board/BoardsGrid";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { get } from "@/lib/apiClient";
+import { ApiError } from "@/lib/errors";
+import { BoardCard } from "@/components/board/BoardCard";
+import Link from "next/link";
 
 /**
- * Home page — Server Component (no "use client").
+ * Home page — Server Component (no "use client", no useAuth).
  *
- * The access token is held in memory on the client only (never in a
- * server-readable cookie), so the authenticated `GET /api/boards` fetch
- * must happen on the client after the AuthProvider rehydrates.
+ * Reads the JWT access token from the `access_token` httpOnly cookie set by
+ * Next.js middleware (or the auth flow) and calls GET /api/boards directly on
+ * the server.  This eliminates the previous client-side fetch waterfall and
+ * renders boards as part of the initial HTML stream.
  *
- * This page is a pure Server Component that:
- *   1. Renders the page heading and layout shell on the server.
- *   2. Mounts <BoardsGrid> which is a Client Component that fetches boards
- *      using the in-memory access token supplied by AuthContext.
- *   3. Wraps the grid in a <Suspense> boundary so the shell is never blocked
- *      by the client-side fetch.
+ * Cookie prerequisite:
+ *   The access token must be stored in a server-readable cookie named
+ *   `access_token`.  The AuthContext currently stores it only in memory;
+ *   the middleware or login route must also persist it as an httpOnly cookie
+ *   for this Server Component fetch to work.  If the cookie is absent the
+ *   page redirects to /login.
+ *
+ * 401 on the server:
+ *   ApiError with statusCode 401 → redirect to /login (using Next.js
+ *   `redirect()` from next/navigation — no router.push() needed).
  */
-export default function HomePage() {
+
+interface Board {
+  id: string;
+  name: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export default async function HomePage() {
+  // ---- Read token from server-readable cookie --------------------------------
+  const cookieStore = await cookies();
+  const token = cookieStore.get("access_token")?.value ?? null;
+
+  if (!token) {
+    redirect("/login");
+  }
+
+  // ---- Fetch boards on the server -------------------------------------------
+  let boards: Board[];
+
+  try {
+    boards = await get<Board[]>("/api/boards", { token });
+  } catch (err) {
+    if (err instanceof ApiError && err.isUnauthorized) {
+      // Token present but expired or invalid — send user to login.
+      redirect("/login");
+    }
+    // For other errors (network, 5xx) render an error state rather than crash.
+    boards = [];
+  }
+
+  // ---- Render ----------------------------------------------------------------
   return (
     <main className="min-h-screen bg-background px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
@@ -28,36 +70,33 @@ export default function HomePage() {
           </p>
         </header>
 
-        {/*
-          Suspense boundary: the shell above is streamed immediately;
-          <BoardsGrid> streams in once the client fetch resolves.
-        */}
-        <Suspense fallback={<BoardsGridSkeleton />}>
-          <BoardsGrid />
-        </Suspense>
+        {boards.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            You don&apos;t have any boards yet.
+          </p>
+        ) : (
+          <ul className="grid list-none grid-cols-1 gap-4 p-0 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {boards.map((board) => (
+              <li key={board.id}>
+                <Link href={`/boards/${board.id}`} className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md">
+                  <BoardCard
+                    title={board.name}
+                    meta={
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(board.updated_at).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </span>
+                    }
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </main>
-  );
-}
-
-/** Skeleton shown while the client-side boards fetch is in flight. */
-function BoardsGridSkeleton() {
-  return (
-    <div
-      className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-      aria-busy="true"
-      aria-label="Loading boards"
-    >
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div
-          // Static skeleton tiles — index as key is acceptable here because
-          // the list is never reordered and contains no domain identity.
-          // eslint-disable-next-line react/no-array-index-key
-          key={i}
-          className="h-24 animate-pulse rounded-md border border-border bg-muted"
-          aria-hidden="true"
-        />
-      ))}
-    </div>
   );
 }
