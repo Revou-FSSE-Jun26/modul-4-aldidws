@@ -1,4 +1,7 @@
 import { useCallback, useReducer, useRef } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { patch } from "@/lib/apiClient";
+import { ApiError } from "@/lib/errors";
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -16,10 +19,14 @@ export interface DraggableCard {
 export type ColumnCardMap = Record<string, DraggableCard[]>;
 
 // ---------------------------------------------------------------------------
-// API
+// API — uses apiClient so auth header, base URL, and error typing are handled
+// centrally. No raw fetch here.
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+interface CardPositionBody {
+  column_id: string;
+  position: number;
+}
 
 async function patchCardPosition(
   token: string,
@@ -27,25 +34,9 @@ async function patchCardPosition(
   columnId: string,
   position: number,
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/v1/cards/${cardId}/position`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ column_id: columnId, position }),
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as {
-      error?: { message?: string };
-    } | null;
-    throw new Error(
-      json?.error?.message ??
-        `Failed to move card (${res.status})`,
-    );
-  }
+  const body: CardPositionBody = { column_id: columnId, position };
+  // `patch<void>` returns void (204 No Content). Throws ApiError on failure.
+  await patch<void>(`/api/v1/cards/${cardId}/position`, body, { token });
 }
 
 // ---------------------------------------------------------------------------
@@ -167,8 +158,6 @@ function reducer(state: DragState, action: DragAction): DragState {
 export interface UseDragAndDropOptions {
   /** Initial column → card map, e.g. from the board fetch. */
   initialColumns: ColumnCardMap;
-  /** Access token from AuthContext. Required for PATCH calls. */
-  token: string | null;
   /**
    * Optional callback invoked after every successful move.
    * The board component can use this to sync its own state or trigger a
@@ -180,7 +169,7 @@ export interface UseDragAndDropOptions {
    * The hook already rolls back state; this gives the caller a chance to
    * show a toast or other UI feedback.
    */
-  onMoveError?: (error: Error) => void;
+  onMoveError?: (error: ApiError | Error) => void;
 }
 
 export interface DragHandlers {
@@ -225,39 +214,40 @@ export interface UseDragAndDropReturn {
  * Encapsulates HTML5 Drag and Drop state and the optimistic
  * PATCH /api/v1/cards/<id>/position mutation.
  *
- * Usage in a board component:
+ * The JWT token is read from AuthContext internally — callers do not need
+ * to pass it.  The `patch()` helper from `apiClient` is used so that base
+ * URL resolution, Authorization header injection, and typed ApiError
+ * throwing are all handled in one place.
+ *
+ * Optimistic update flow:
+ *   1. Snapshot current column state before any change.
+ *   2. Dispatch OPTIMISTIC_MOVE — UI updates immediately.
+ *   3. Fire PATCH /api/v1/cards/<id>/position in the background.
+ *   4a. Success → dispatch MOVE_COMPLETE; call onMoveSuccess.
+ *   4b. ApiError / network error → dispatch ROLLBACK(snapshot); call onMoveError.
+ *
+ * Usage:
  * ```tsx
- * const { columns, dragHandlers } = useDragAndDrop({ initialColumns, token });
+ * const { columns, dragHandlers } = useDragAndDrop({ initialColumns });
  *
  * // On a draggable card:
- * <div
- *   draggable
- *   onDragStart={(e) => dragHandlers.onDragStart(e, card.id)}
- *   onDragEnd={dragHandlers.onDragEnd}
- * />
+ * <div draggable
+ *      onDragStart={(e) => dragHandlers.onDragStart(e, card.id)}
+ *      onDragEnd={dragHandlers.onDragEnd} />
  *
  * // On a column drop zone:
- * <div
- *   onDragOver={dragHandlers.onDragOver}
- *   onDrop={(e) => dragHandlers.onDrop(e, column.id, targetIndex)}
- * />
+ * <div onDragOver={dragHandlers.onDragOver}
+ *      onDrop={(e) => dragHandlers.onDrop(e, column.id, targetIndex)} />
  * ```
- *
- * Design decisions:
- * - Uses `useReducer` so the snapshot + rollback logic is explicit and
- *   testable in isolation.
- * - Snapshot is taken immediately before the optimistic update so rollback
- *   always restores the last confirmed server state.
- * - Native HTML5 DnD API — no external library dependency.
- * - `column_id` and `position` are carried via `DataTransfer` so drop
- *   handlers don't need a shared mutable ref.
  */
 export function useDragAndDrop({
   initialColumns,
-  token,
   onMoveSuccess,
   onMoveError,
 }: UseDragAndDropOptions): UseDragAndDropReturn {
+  // Read token from AuthContext — no caller involvement needed.
+  const { token } = useAuth();
+
   const [state, dispatch] = useReducer(reducer, {
     columns: initialColumns,
     draggingCardId: null,
@@ -273,7 +263,6 @@ export function useDragAndDrop({
   const onDragStart = useCallback(
     (e: React.DragEvent<HTMLElement>, cardId: string) => {
       e.dataTransfer.effectAllowed = "move";
-      // Carry the card id through the drag — avoids shared mutable state.
       e.dataTransfer.setData("text/plain", cardId);
       dispatch({ type: "DRAG_START", cardId });
     },
@@ -288,7 +277,6 @@ export function useDragAndDrop({
 
   // ---- onDragOver ----
   const onDragOver = useCallback((e: React.DragEvent<HTMLElement>) => {
-    // Prevent browser's default "no drop" cursor.
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
   }, []);
@@ -305,19 +293,14 @@ export function useDragAndDrop({
       const cardId = e.dataTransfer.getData("text/plain");
       if (!cardId) return;
 
-      // Snapshot the current state BEFORE the optimistic update so we can
-      // roll back to a known-good state if the PATCH fails.
+      // Snapshot BEFORE the optimistic update so rollback restores a
+      // known-good state.
       const previousColumns = columnsRef.current;
 
-      // 1. Optimistically update local state — UI responds immediately.
-      dispatch({
-        type: "OPTIMISTIC_MOVE",
-        cardId,
-        targetColumnId,
-        targetIndex,
-      });
+      // 1. Optimistic update — UI moves immediately.
+      dispatch({ type: "OPTIMISTIC_MOVE", cardId, targetColumnId, targetIndex });
 
-      // 2. Fire the PATCH — no await here; we handle success/failure async.
+      // 2. Fire the PATCH via apiClient in the background.
       void (async () => {
         if (!token) {
           dispatch({ type: "ROLLBACK", previousColumns });
@@ -330,10 +313,12 @@ export function useDragAndDrop({
           dispatch({ type: "MOVE_COMPLETE" });
           onMoveSuccess?.(columnsRef.current);
         } catch (err: unknown) {
-          // 3. Roll back to the snapshot taken before the optimistic update.
+          // Roll back to the snapshot on any failure (ApiError or TypeError).
           dispatch({ type: "ROLLBACK", previousColumns });
           onMoveError?.(
-            err instanceof Error ? err : new Error("Move failed."),
+            err instanceof ApiError || err instanceof Error
+              ? err
+              : new Error("Move failed."),
           );
         }
       })();
