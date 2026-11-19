@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { get } from "@/lib/apiClient";
+import { ApiError } from "@/lib/errors";
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -26,10 +28,10 @@ export interface UseNotificationsReturn {
 }
 
 // ---------------------------------------------------------------------------
-// API helper
+// API helper — uses apiClient so base URL and Authorization header are
+// handled centrally. No raw fetch here.
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 const POLL_INTERVAL_MS = 30_000;
 
 interface NotificationApiItem {
@@ -42,25 +44,24 @@ interface NotificationApiItem {
 async function fetchNotifications(token: string): Promise<Notification[]> {
   // GET /api/notifications is not yet implemented on the backend.
   // When it ships it should return { data: NotificationApiItem[] }.
-  // A 404 or 405 is treated as an empty list so the bell renders correctly
-  // today and populates automatically once the endpoint exists.
-  const res = await fetch(`${API_BASE}/api/notifications`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-
-  if (res.status === 404 || res.status === 405) return [];
-  if (!res.ok) {
-    throw new Error(`Failed to fetch notifications (${res.status})`);
+  // ApiError with isNotFound (404) or status 405 is treated as an empty list
+  // so the bell renders correctly today and populates once the endpoint exists.
+  try {
+    const items = await get<NotificationApiItem[]>("/api/notifications", { token });
+    return items.map((n) => ({
+      id: n.id,
+      message: n.message,
+      read: n.read,
+      createdAt: n.created_at,
+    }));
+  } catch (err: unknown) {
+    // 404 / 405 — endpoint not yet live; return empty list gracefully.
+    if (err instanceof ApiError && (err.isNotFound || err.statusCode === 405)) {
+      return [];
+    }
+    // Any other error propagates to the hook's catch block.
+    throw err;
   }
-
-  const json = (await res.json()) as { data: NotificationApiItem[] };
-  return json.data.map((n) => ({
-    id: n.id,
-    message: n.message,
-    read: n.read,
-    createdAt: n.created_at,
-  }));
 }
 
 // ---------------------------------------------------------------------------
