@@ -1,4 +1,4 @@
-import { useCallback, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { patch } from "@/lib/apiClient";
 import { ApiError } from "@/lib/errors";
@@ -257,7 +257,10 @@ export function useDragAndDrop({
   // Keep a stable ref to the latest columns for use inside async callbacks
   // without stale-closure issues.
   const columnsRef = useRef<ColumnCardMap>(state.columns);
-  columnsRef.current = state.columns;
+
+  useEffect(() => {
+    columnsRef.current = state.columns;
+  }, [state.columns]);
 
   // ---- onDragStart ----
   const onDragStart = useCallback(

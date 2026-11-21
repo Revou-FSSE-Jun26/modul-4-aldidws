@@ -154,18 +154,11 @@ export function MyTasksList() {
   const [state, setState] = useState<FetchState>({ status: "idle" });
 
   useEffect(() => {
-    if (isAuthLoading) return;
+    if (isAuthLoading || !token) return;
 
-    if (!token) {
-      setState({
-        status: "error",
-        message: "You must be signed in to view your tasks.",
-      });
-      return;
-    }
-
-    setState({ status: "loading" });
-
+    // All setState calls happen inside .then() / .catch() callbacks so they
+    // are never synchronous within the effect body, satisfying the
+    // react-hooks/set-state-in-effect rule.
     fetchAssignedCards(token)
       .then((cards) =>
         setState({ status: "success", groups: groupByBoard(cards) }),
@@ -180,6 +173,18 @@ export function MyTasksList() {
         }),
       );
   }, [token, isAuthLoading]);
+
+  // ----- Unauthenticated — derived directly from context, no effect needed -----
+  if (!isAuthLoading && !token) {
+    return (
+      <div
+        role="alert"
+        className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+      >
+        You must be signed in to view your tasks.
+      </div>
+    );
+  }
 
   // ----- Loading -----
   if (state.status === "idle" || state.status === "loading" || isAuthLoading) {

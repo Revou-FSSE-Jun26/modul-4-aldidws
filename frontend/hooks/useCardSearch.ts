@@ -112,7 +112,10 @@ export function useCardSearch(filters: CardSearchFilters): UseCardSearchReturn {
   // Stable ref to the latest filters to avoid capturing stale values in the
   // async fetch callback.
   const filtersRef = useRef<CardSearchFilters>(filters);
-  filtersRef.current = filters;
+
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters.query, filters.assignee, filters.dueDateFrom, filters.dueDateTo, filters.label]);
 
   useEffect(() => {
     // Don't search while auth is still rehydrating.

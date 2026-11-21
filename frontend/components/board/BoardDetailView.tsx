@@ -125,22 +125,14 @@ export function BoardDetailView({ boardId }: BoardDetailViewProps) {
   const [state, setState] = useState<ViewState>({ status: "idle" });
 
   useEffect(() => {
-    if (isAuthLoading) return;
+    if (isAuthLoading || !token) return;
 
-    if (!token) {
-      setState({
-        status: "error",
-        message: "You must be signed in to view this board.",
-      });
-      return;
-    }
-
-    setState({ status: "loading" });
+    // token is guaranteed non-null here (checked above).
+    // All setState calls happen inside async callbacks so they are never
+    // synchronous within the effect body, satisfying react-hooks/set-state-in-effect.
+    const t = token;
 
     async function load() {
-      // token is guaranteed non-null here (checked above)
-      const t = token!;
-
       const [board, columns] = await Promise.all([
         fetchBoard(t, boardId),
         fetchColumns(t, boardId),
@@ -168,6 +160,20 @@ export function BoardDetailView({ boardId }: BoardDetailViewProps) {
       });
     });
   }, [token, isAuthLoading, boardId]);
+
+  // ----- Unauthenticated — derived directly from context, no effect needed -----
+  if (!isAuthLoading && !token) {
+    return (
+      <div className="px-4 py-8 sm:px-6 lg:px-8">
+        <div
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          You must be signed in to view this board.
+        </div>
+      </div>
+    );
+  }
 
   // ----- Loading -----
   if (state.status === "idle" || state.status === "loading" || isAuthLoading) {

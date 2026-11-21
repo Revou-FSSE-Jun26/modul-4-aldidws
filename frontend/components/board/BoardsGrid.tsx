@@ -63,17 +63,11 @@ export function BoardsGrid() {
   useEffect(() => {
     // Wait for the AuthProvider's silent-refresh attempt to finish before
     // deciding whether to fetch or redirect.
-    if (isAuthLoading) return;
+    if (isAuthLoading || !token) return;
 
-    // Unauthenticated — the middleware.ts (not yet implemented) will redirect,
-    // but we guard here too so the component doesn't attempt an anonymous call.
-    if (!token) {
-      setState({ status: "error", message: "You must be signed in to view boards." });
-      return;
-    }
-
-    setState({ status: "loading" });
-
+    // All setState calls happen inside .then() / .catch() callbacks so they
+    // are never synchronous within the effect body, satisfying the
+    // react-hooks/set-state-in-effect rule.
     fetchBoards(token)
       .then((boards) => setState({ status: "success", boards }))
       .catch((err: unknown) => {
@@ -82,6 +76,18 @@ export function BoardsGrid() {
         setState({ status: "error", message });
       });
   }, [token, isAuthLoading]);
+
+  // ----- Unauthenticated — derived directly from context, no effect needed -----
+  if (!isAuthLoading && !token) {
+    return (
+      <div
+        role="alert"
+        className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+      >
+        You must be signed in to view boards.
+      </div>
+    );
+  }
 
   // ----- Loading -----
   if (state.status === "idle" || state.status === "loading" || isAuthLoading) {
