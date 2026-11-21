@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import toast from "react-hot-toast";
+import { showError } from "@/lib/toast";
 import { ApiError } from "@/lib/errors";
 
 // ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ export interface UseErrorHandlerReturn {
 export function useErrorHandler(): UseErrorHandlerReturn {
   const handleError = useCallback((err: unknown) => {
     const message = resolveErrorMessage(err);
-    toast.error(message);
+    showError(message);
   }, []);
 
   return { handleError };
