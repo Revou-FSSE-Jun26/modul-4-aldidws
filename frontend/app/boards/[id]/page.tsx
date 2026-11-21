@@ -6,6 +6,11 @@ import { ApiError } from "@/lib/errors";
 import { ColumnHeader } from "@/components/board/ColumnHeader";
 import { BoardCard } from "@/components/board/BoardCard";
 
+// This page reads the `access_token` cookie on every request, so it must
+// opt out of static prerendering. `force-dynamic` tells Next.js to always
+// render this route at request time.
+export const dynamic = "force-dynamic";
+
 /**
  * Board detail page — Server Component (no "use client", no useAuth).
  *

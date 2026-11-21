@@ -6,6 +6,11 @@ import { ApiError } from "@/lib/errors";
 import { BoardCard } from "@/components/board/BoardCard";
 import Link from "next/link";
 
+// This page reads the `access_token` cookie on every request, so it must
+// opt out of static prerendering. `force-dynamic` tells Next.js to always
+// render this route at request time (equivalent to getServerSideProps).
+export const dynamic = "force-dynamic";
+
 /**
  * Home page — Server Component (no "use client", no useAuth).
  *
@@ -78,16 +83,22 @@ export default async function HomePage() {
           <ul className="grid list-none grid-cols-1 gap-4 p-0 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {boards.map((board) => (
               <li key={board.id}>
-                <Link href={`/boards/${board.id}`} className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md">
+                <Link
+                  href={`/boards/${board.id}`}
+                  className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+                >
                   <BoardCard
                     title={board.name}
                     meta={
                       <span className="text-xs text-muted-foreground">
-                        {new Date(board.updated_at).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
+                        {new Date(board.updated_at).toLocaleDateString(
+                          undefined,
+                          {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          },
+                        )}
                       </span>
                     }
                   />
