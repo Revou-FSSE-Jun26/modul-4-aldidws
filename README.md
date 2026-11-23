@@ -22,8 +22,9 @@
 **RevoTask** is a Trello-like, web-based task management application that lets
 authenticated users organise their work through a Kanban board paradigm: boards contain
 ordered columns, columns contain ordered cards (tasks), and cards support comments,
-assignments, and drag-and-drop reordering. The Flask REST API is deployed on **Railway**
-and the Next.js frontend on **Vercel**; both are reachable via their public URLs.
+assignments, and drag-and-drop reordering. The application is **not deployed yet**; it
+currently runs locally. The planned targets are **Railway** (Flask API and PostgreSQL)
+and **Vercel** (Next.js frontend).
 
 ### User Roles
 
@@ -100,7 +101,7 @@ RevoTask was built end-to-end inside the **Kiro AI IDE**, following this iterati
 8. Kiro CLI
    └─ Used the Kiro CLI to scaffold, execute, and refine the three test layers
       (pytest, React Testing Library, Playwright) and to generate/iterate
-      project documentation against the deployed application.
+      project documentation against the locally running application.
 ```
 
 ---
@@ -164,8 +165,8 @@ RevoTask was built end-to-end inside the **Kiro AI IDE**, following this iterati
 
 | Technology   | Purpose                                        |
 | ------------ | ---------------------------------------------- |
-| **Railway**  | Backend API and PostgreSQL deployment          |
-| **Vercel**   | Frontend deployment                            |
+| **Railway**  | Planned backend API and PostgreSQL hosting     |
+| **Vercel**   | Planned frontend hosting                       |
 | **Kiro**     | AI IDE used throughout development             |
 | **Kiro CLI** | Test scaffolding, execution, and doc iteration |
 
@@ -295,7 +296,7 @@ npx playwright install --with-deps
 # Run all E2E tests locally (headless) — requires backend + frontend running:
 npx playwright test
 
-# Run all E2E tests against the LIVE deployed Vercel URL:
+# Once the frontend is deployed, run against the deployed URL (not deployed yet):
 BASE_URL=https://your-frontend.vercel.app npx playwright test
 
 # Run with headed browser (for debugging):
@@ -314,15 +315,16 @@ npx playwright show-report
 > **Note:** For local E2E runs, both the backend (`flask run` from `backend/`) and the
 > frontend (`npm run dev` from `frontend/`) must be running. Set `BASE_URL`,
 > `TEST_USER_EMAIL`, and `TEST_USER_PASSWORD` in `e2e/.env` (or pass via the CLI) before
-> running. To test against the live Vercel URL instead, set `BASE_URL` to the deployed
-> frontend address.
+> running. After the frontend is deployed, set `BASE_URL` to the deployed frontend
+> address to test against it.
 
 ---
 
 ## 7. Screenshots
 
 > Screenshots below are placeholders. Replace each `<!-- -->` comment with the actual
-> image once the application is deployed or running locally.
+> image from the locally running application. Deployment-based screenshots (marked
+> "after deployment") can only be added once the app is deployed.
 
 ### Postman — API Blueprint Coverage (8 Blueprints)
 
@@ -365,12 +367,12 @@ npx playwright show-report
 
 ### Test Reports
 
-| Report                                                                | Screenshot                 |
-| --------------------------------------------------------------------- | -------------------------- |
-| `pytest -v` — 13 tests passed                                         | _(screenshot placeholder)_ |
-| Postman — all 8 Blueprints reachable on the public Railway URL        | _(screenshot placeholder)_ |
-| Playwright HTML report — all tests passed against the live Vercel URL | _(screenshot placeholder)_ |
-| `next build` — exit code 0                                            | _(screenshot placeholder)_ |
+| Report                                                                 | Screenshot                 |
+| ---------------------------------------------------------------------- | -------------------------- |
+| `pytest -v` — 13 tests passed                                          | _(screenshot placeholder)_ |
+| Postman — all 8 Blueprints reachable (after deployment, public URL)    | _(screenshot placeholder)_ |
+| Playwright HTML report — all tests passed (after deployment, live URL) | _(screenshot placeholder)_ |
+| `next build` — exit code 0                                             | _(screenshot placeholder)_ |
 
 ---
 
