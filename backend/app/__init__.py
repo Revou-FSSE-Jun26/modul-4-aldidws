@@ -1,0 +1,97 @@
+"""
+Application factory.
+
+Create and configure a Flask application instance.  Callers should use
+``create_app()`` rather than importing a module-level app object, which keeps
+the factory testable and avoids circular-import issues.
+"""
+from flasgger import Swagger
+from flask import Flask
+
+from app.common.error_handlers import register_error_handlers
+from app.extensions import db
+
+
+def create_app(config_object: str = "app.config.DevelopmentConfig") -> Flask:
+    """Create, configure, and return a Flask application instance.
+
+    Args:
+        config_object: Dotted-path string of the config class to load.
+            Defaults to ``DevelopmentConfig``.  Pass
+            ``"app.config.TestingConfig"`` in tests.
+
+    Returns:
+        A fully initialised Flask application.
+    """
+    app = Flask(__name__)
+    app.config.from_object(config_object)
+
+    # Swagger / OpenAPI configuration
+    app.config["SWAGGER"] = {
+        "title": "RevoTask API",
+        "uiversion": 3,
+        "openapi": "3.0.3",
+        "description": "RevoTask Kanban board REST API. Use the Authorize button to set your Bearer token.",
+        "securityDefinitions": {
+            "BearerAuth": {
+                "type": "apiKey",
+                "name": "Authorization",
+                "in": "header",
+                "description": "Format: Bearer <access_token>",
+            }
+        },
+    }
+    Swagger(app)
+
+    # Initialise extensions
+    db.init_app(app)
+
+    from flask_migrate import Migrate
+    Migrate(app, db)
+
+    # Register blueprints
+    _register_blueprints(app)
+
+    # Register global error handlers
+    register_error_handlers(app)
+
+    @app.route('/api/health', methods=['GET'])
+    def health_check():
+        from flask import jsonify
+        try:
+            db.session.execute(db.text('SELECT 1'))
+            db_status = 'ok'
+        except Exception:
+            db_status = 'error'
+        return jsonify({'data': {'status': 'ok', 'db': db_status}}), 200
+
+    return app
+
+
+def _register_blueprints(app: Flask) -> None:
+    from app.blueprints.cards import cards_bp
+    from app.blueprints.auth import auth_bp
+    from app.blueprints.boards import boards_bp
+    from app.blueprints.columns import columns_bp
+    from app.blueprints.comments import comments_bp
+    from app.blueprints.notifications import notifications_bp
+    from app.blueprints.analytics import analytics_bp
+    from app.blueprints.users import users_bp
+
+    # NOTE (technical debt): cards_bp and columns_bp are registered under
+    # /api/v1/ while every other blueprint uses /api/ without a version prefix.
+    # This inconsistency pre-dates the current implementation and should be
+    # resolved in a dedicated API-versioning task before the first public
+    # release.  Do NOT fix here — changing these URLs is a breaking change
+    # for existing clients.
+    app.register_blueprint(cards_bp, url_prefix="/api/v1/cards")
+    app.register_blueprint(cards_bp, url_prefix="/api/v1/columns", name="cards_columns")
+    app.register_blueprint(auth_bp, url_prefix="/api/auth")
+    app.register_blueprint(boards_bp, url_prefix="/api/boards")
+    app.register_blueprint(columns_bp, url_prefix="/api/boards", name="columns_boards")
+    app.register_blueprint(columns_bp, url_prefix="/api/columns")
+    app.register_blueprint(comments_bp, url_prefix="/api/cards", name="comments_cards")
+    app.register_blueprint(comments_bp, url_prefix="/api/comments")
+    app.register_blueprint(notifications_bp, url_prefix="/api/notifications")
+    app.register_blueprint(analytics_bp, url_prefix="/api/analytics")
+    app.register_blueprint(users_bp, url_prefix="/api/users")
