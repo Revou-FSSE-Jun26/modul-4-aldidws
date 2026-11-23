@@ -39,7 +39,7 @@ Audit basis: git `HEAD` is `b9cf8d1`. The working tree only had untracked files 
 
 Severity levels: High means a security hole or broken functionality. Medium means a deviation from the guidelines that affects maintainability, the API contract or testing. Low means cosmetic, documentation or file-layout issues.
 
-Eleven of the 31 findings are fixed and two are partly fixed. The other 18 are open, including 3 of the 5 High findings (V-009, V-010, V-011). The fixed High findings are V-003 and V-031. V-012, V-017 and V-031 were fixed and V-014 was partly fixed after the audit commit. None of these changes are committed yet.
+Eleven of the 31 findings are fixed and two are partly fixed. The other 18 are open, including 3 of the 5 High findings (V-009, V-010, V-011). The fixed High findings are V-003 and V-031. V-012, V-017 and V-031 were fixed and V-014 was partly fixed after the audit commit. The fixes after the audit commit are in `97e4c46` (V-012, V-014, V-031) and `87f1f40` (V-017).
 
 ## 2. Method and evidence
 
@@ -65,12 +65,12 @@ Guideline references use two forms. `guidelines/<file>.md "<title>"` points to a
 | V-009 | api-contract | High     | Frontend calls `/api/auth/refresh` and `/api/auth/logout`, which the backend does not have | Open                | Inspection                  |
 | V-010 | security     | High     | Refresh token written through `document.cookie` (not HttpOnly)                             | Open                | Inspection                  |
 | V-011 | security     | High     | No rate limiting                                                                           | Open                | Inspection                  |
-| V-012 | security     | Medium   | CORS not configured in code                                                                | Fixed (uncommitted) | Inspection                  |
+| V-012 | security     | Medium   | CORS not configured in code                                                                | Fixed (`97e4c46`)   | Inspection                  |
 | V-013 | security     | Medium   | Password hashing is not explicitly Argon2id or bcrypt                                      | Open                | Inspection                  |
 | V-014 | security     | Low      | Default secret and DB URL in `DevelopmentConfig`                                           | Partial             | Inspection                  |
 | V-015 | backend      | Low      | Ad-hoc 401 response copied four times in the auth decorator                                | Open                | Inspection                  |
 | V-016 | frontend     | Medium   | Direct `fetch()` in components, hooks and context                                          | Open                | Inspection                  |
-| V-017 | frontend     | Medium   | `NEXT_PUBLIC_API_URL` missing from `.env.example`                                          | Fixed (uncommitted) | Inspection (+ audit report) |
+| V-017 | frontend     | Medium   | `NEXT_PUBLIC_API_URL` missing from `.env.example`                                          | Fixed (`87f1f40`)   | Inspection (+ audit report) |
 | V-018 | structure    | Medium   | Frontend has no `features/` or `lib/api/`                                                  | Open                | Inspection                  |
 | V-019 | api-contract | Medium   | Inconsistent API prefix (`/api` vs `/api/v1`)                                              | Open                | Inspection                  |
 | V-020 | api-contract | Low      | JSON naming, pagination meta and error codes differ from api-contracts                     | Open                | Inspection                  |
@@ -84,7 +84,7 @@ Guideline references use two forms. `guidelines/<file>.md "<title>"` points to a
 | V-028 | structure    | Low      | Duplicate documents (`VIOLATION_REPORT.md`, `.kiro/specs` vs `specs`)                      | Open                | Inspection                  |
 | V-029 | docs         | Medium   | Earlier violation report contained claims that cannot be verified                          | Partial             | Inspection                  |
 | V-030 | frontend     | Low      | Unused imports and misleading comments                                                     | Open                | Inspection (+ report)       |
-| V-031 | security     | High     | `wsgi.py` uses `DevelopmentConfig`; `ProductionConfig` is never used                       | Fixed (uncommitted) | Inspection                  |
+| V-031 | security     | High     | `wsgi.py` uses `DevelopmentConfig`; `ProductionConfig` is never used                       | Fixed (`97e4c46`)   | Inspection                  |
 
 ## 4. Entries
 
@@ -168,7 +168,7 @@ Guideline: `security.md` §8.
 
 Before: `.env.example` and `backend/app/.env.example` defined `CORS_ALLOWED_ORIGINS`, but `backend/app` had no CORS code and `requirements.txt` had no flask-cors.
 
-Status: fixed, not committed yet. `flask-cors==6.0.5` is pinned and `create_app` (`backend/app/__init__.py`) allows only the origins in `CORS_ALLOWED_ORIGINS`, for `/api/*`, with the methods GET, POST, PUT, PATCH, DELETE, OPTIONS and the headers `Content-Type` and `Authorization`. Credentials are off because auth uses the Bearer header and the backend sets no cookies. Production refuses `*` and origins without `http(s)://`. Tests: `backend/tests/api/test_cors_health.py` (allowed and disallowed preflight, no wildcard, unlisted header) and `backend/tests/unit/test_config.py`.
+Status: fixed in `97e4c46`. `flask-cors==6.0.5` is pinned and `create_app` (`backend/app/__init__.py`) allows only the origins in `CORS_ALLOWED_ORIGINS`, for `/api/*`, with the methods GET, POST, PUT, PATCH, DELETE, OPTIONS and the headers `Content-Type` and `Authorization`. Credentials are off because auth uses the Bearer header and the backend sets no cookies. Production refuses `*` and origins without `http(s)://`. Tests: `backend/tests/api/test_cors_health.py` (allowed and disallowed preflight, no wildcard, unlisted header) and `backend/tests/unit/test_config.py`.
 
 #### V-031: `wsgi.py` uses `DevelopmentConfig`; `ProductionConfig` is unused
 
@@ -178,7 +178,7 @@ Guideline: `security.md` §16 ("Disable debug mode in production") and §19, and
 
 Before: `wsgi.py` called `create_app()`, whose default was `DevelopmentConfig` (`DEBUG = True`), and `ProductionConfig._validate` was never called.
 
-Status: fixed, not committed yet. `create_app` now picks the config with `get_config_object()` in `backend/app/config.py`. It reads `APP_ENV`, then `FLASK_ENV`, and uses `ProductionConfig` when neither is set. An unknown value raises `RuntimeError`. `ProductionConfig` has `DEBUG = False` and checks its variables in `init_app`, which `create_app` calls. Tests: `backend/tests/unit/test_config.py` (default is production, debug off, startup fails without each required variable). Importing `wsgi` with dummy variables gave `DEBUG` False.
+Status: fixed in `97e4c46`. `create_app` now picks the config with `get_config_object()` in `backend/app/config.py`. It reads `APP_ENV`, then `FLASK_ENV`, and uses `ProductionConfig` when neither is set. An unknown value raises `RuntimeError`. `ProductionConfig` has `DEBUG = False` and checks its variables in `init_app`, which `create_app` calls. Tests: `backend/tests/unit/test_config.py` (default is production, debug off, startup fails without each required variable). Importing `wsgi` with dummy variables gave `DEBUG` False.
 
 #### V-017: `NEXT_PUBLIC_API_URL` was read but never defined
 
@@ -188,7 +188,7 @@ Guideline: `guidelines/frontend.md "Centralised API Service Modules"` (base URL 
 
 Before: six files read `NEXT_PUBLIC_API_URL ?? ""` (`context/AuthContext.tsx`, `app/profile/page.tsx`, `BoardDetailView.tsx`, `BoardsGrid.tsx`, `MyTasksList.tsx`, `hooks/useCardSearch.ts`), while `apiClient.ts` and both `.env.example` files used `NEXT_PUBLIC_API_BASE_URL`. The variable was never defined, so those URLs were relative and did not reach Flask. `frontend-audit-report.md` (Notes) records the same problem.
 
-Status: fixed, not committed yet. The six files now read `NEXT_PUBLIC_API_BASE_URL`, and `frontend/.env.example` says the value is the backend origin without `/api`. The direct `fetch()` calls remain (V-016). Checked with `npm run lint`, `npx tsc --noEmit`, `npm run build` and `npx jest`; no test exercises these fetches against a real backend.
+Status: fixed in `87f1f40`. The six files now read `NEXT_PUBLIC_API_BASE_URL`, and `frontend/.env.example` says the value is the backend origin without `/api`. The direct `fetch()` calls remain (V-016). Checked with `npm run lint`, `npx tsc --noEmit`, `npm run build` and `npx jest`; no test exercises these fetches against a real backend.
 
 ### Partially fixed
 
@@ -219,7 +219,7 @@ Guideline: `security.md` §2 item 8 and §19 item 1.
 
 `DevelopmentConfig` in `backend/app/config.py` still has local defaults for `JWT_SECRET_KEY`, `SECRET_KEY` and `DATABASE_URL` (values redacted). `TestingConfig` uses a literal key meant only for tests. No `.env` file is tracked (`git ls-files` shows only `.env.example`).
 
-Status: partial, not committed yet. `ProductionConfig` no longer has any default for `SECRET_KEY`, `JWT_SECRET_KEY` or `DATABASE_URL`, and startup fails with a message that names the missing variable. Production is also the default when `APP_ENV` is unset (V-031), so the development defaults are only used when someone sets `APP_ENV=development`. The defaults in `DevelopmentConfig` were kept on purpose for local work.
+Status: partial (`97e4c46`). `ProductionConfig` no longer has any default for `SECRET_KEY`, `JWT_SECRET_KEY` or `DATABASE_URL`, and startup fails with a message that names the missing variable. Production is also the default when `APP_ENV` is unset (V-031), so the development defaults are only used when someone sets `APP_ENV=development`. The defaults in `DevelopmentConfig` were kept on purpose for local work.
 
 ### Open
 
