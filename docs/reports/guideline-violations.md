@@ -39,7 +39,7 @@ Audit basis: git `HEAD` is `b9cf8d1`. The working tree only had untracked files 
 
 Severity levels: High means a security hole or broken functionality. Medium means a deviation from the guidelines that affects maintainability, the API contract or testing. Low means cosmetic, documentation or file-layout issues.
 
-Thirteen of the 32 findings are fixed and two are partly fixed. The other 17 are open, including 2 of the 6 High findings (V-009, V-011). The fixed High findings are V-003, V-010, V-031 and V-032. V-012, V-017 and V-031 were fixed and V-014 was partly fixed after the audit commit. The fixes after the audit commit are in `97e4c46` (V-012, V-014, V-031) and `87f1f40` (V-017). V-010 and V-032 are fixed in the working tree and not committed yet.
+Thirteen of the 32 findings are fixed and two are partly fixed. The other 17 are open, including 2 of the 6 High findings (V-009, V-011). The fixed High findings are V-003, V-010, V-031 and V-032. V-012, V-017 and V-031 were fixed and V-014 was partly fixed after the audit commit. The fixes after the audit commit are in `97e4c46` (V-012, V-014, V-031) and `87f1f40` (V-017). V-010 is fixed in `f38e5a8` and V-032 in `ebb347b`.
 
 ## 2. Method and evidence
 
@@ -63,7 +63,7 @@ Guideline references use two forms. `guidelines/<file>.md "<title>"` points to a
 | V-007 | backend      | Low      | Duplicate `per_page` cap (dead code)                                                            | Fixed (`dd8e301`)   | Review                         |
 | V-008 | frontend     | Low      | `BaseButton` had no `destructive` variant, `toast` had no `showLoading`                         | Fixed (`6f260ff`)   | Audit checklist                |
 | V-009 | api-contract | High     | Backend has no `/api/auth/refresh` or `/api/auth/logout` (no session restore, no server logout) | Open                | Inspection                     |
-| V-010 | security     | High     | Refresh token written through `document.cookie` (not HttpOnly)                                  | Fixed (uncommitted) | Inspection                     |
+| V-010 | security     | High     | Refresh token written through `document.cookie` (not HttpOnly)                                  | Fixed (`f38e5a8`)   | Inspection                     |
 | V-011 | security     | High     | No rate limiting                                                                                | Open                | Inspection                     |
 | V-012 | security     | Medium   | CORS not configured in code                                                                     | Fixed (`97e4c46`)   | Inspection                     |
 | V-013 | security     | Medium   | Password hashing is not explicitly Argon2id or bcrypt                                           | Open                | Inspection                     |
@@ -85,7 +85,7 @@ Guideline references use two forms. `guidelines/<file>.md "<title>"` points to a
 | V-029 | docs         | Medium   | Earlier violation report contained claims that cannot be verified                               | Partial             | Inspection                     |
 | V-030 | frontend     | Low      | Unused imports and misleading comments                                                          | Open                | Inspection (+ report)          |
 | V-031 | security     | High     | `wsgi.py` uses `DevelopmentConfig`; `ProductionConfig` is never used                            | Fixed (`97e4c46`)   | Inspection                     |
-| V-032 | api-contract | High     | Register contract mismatch: frontend sends `name`, backend schema rejects it (HTTP 400)         | Fixed (uncommitted) | Inspection (production report) |
+| V-032 | api-contract | High     | Register contract mismatch: frontend sends `name`, backend schema rejects it (HTTP 400)         | Fixed (`ebb347b`)   | Inspection (production report) |
 
 ## 4. Entries
 
@@ -169,7 +169,7 @@ Guideline: `security.md` §3.3 (`HttpOnly`, `Secure`, `SameSite` cookies) and §
 
 Before: `frontend/context/AuthContext.tsx` wrote `refresh_token` to a cookie from JavaScript after login, with a TODO to move it to `Set-Cookie`. The backend never read it. Scripts could read the cookie (exposed to XSS) and it had no `Secure` flag.
 
-Status: fixed (uncommitted). `login()` no longer writes any cookie and `logout()` no longer clears one. The backend still returns `refresh_token` in the JSON body (`auth/routes.py:111`) and the frontend ignores it. Nothing is stored in cookies, `localStorage` or `sessionStorage`; the access token is kept in memory only. Tests in `frontend/context/__tests__/AuthContext.test.tsx` check that `document.cookie` is unchanged and that both web storages stay empty after login. These are jest/jsdom tests, not a real browser check. If a refresh token is needed later, the backend should set it as an HttpOnly cookie with CSRF protection (`security.md` §7).
+Status: fixed in `f38e5a8`. `login()` no longer writes any cookie and `logout()` no longer clears one. The backend still returns `refresh_token` in the JSON body (`auth/routes.py:111`) and the frontend ignores it. Nothing is stored in cookies, `localStorage` or `sessionStorage`; the access token is kept in memory only. Tests in `frontend/context/__tests__/AuthContext.test.tsx` check that `document.cookie` is unchanged and that both web storages stay empty after login. These are jest/jsdom tests, not a real browser check. If a refresh token is needed later, the backend should set it as an HttpOnly cookie with CSRF protection (`security.md` §7).
 
 #### V-012: CORS not configured in code
 
@@ -211,7 +211,7 @@ Before: the register page posted `name`, `email` and `password` (`frontend/app/r
 
 Why it was not caught: no backend test posted to `/api/auth/register`. The only register tests called `register_user` directly (`backend/tests/test_auth_service.py`), bypassing the schema. No e2e test registers a user (`e2e/fixtures/auth.setup.ts` only logs in).
 
-Status: fixed (uncommitted). `RegisterSchema` now requires `name` (1 to 255 characters, surrounding whitespace stripped in a `pre_load` hook, so whitespace-only is rejected), and `register_user` stores it. `LoginSchema` is unchanged, and the login request sends only `email` and `password` (`frontend/context/AuthContext.tsx:75`). The `users.name` column already exists in migration `e75e73442f21`, so no migration was needed. Regression tests: `backend/tests/api/test_auth_routes.py` (14 cases) and an updated `test_auth_service.py`. Full backend suite: 59 passed. Not verified against the real production deployment.
+Status: fixed in `ebb347b`. `RegisterSchema` now requires `name` (1 to 255 characters, surrounding whitespace stripped in a `pre_load` hook, so whitespace-only is rejected), and `register_user` stores it. `LoginSchema` is unchanged, and the login request sends only `email` and `password` (`frontend/context/AuthContext.tsx:75`). The `users.name` column already exists in migration `e75e73442f21`, so no migration was needed. Regression tests: `backend/tests/api/test_auth_routes.py` (14 cases) and an updated `test_auth_service.py`. Full backend suite: 59 passed. Not verified against the real production deployment.
 
 Remaining observation (not fixed): the register page shows `err.message`, which for a 400 is the generic "The request contains invalid data". The field-level reasons in `ApiError.details` are not displayed.
 
@@ -258,7 +258,7 @@ The frontend no longer calls the missing endpoints (see the fix note below). The
 
 Impact: there is no session restore, so a page reload logs the user out and the token cannot be renewed after 15 minutes (`auth/service.py`). There is also no server-side logout: logout only clears client state and the access token stays valid until it expires.
 
-Frontend change (uncommitted): `AuthContext` no longer calls `/api/auth/refresh` on mount or `/api/auth/logout`. This also removes the CORS error those calls caused in the browser console. It does not close this violation.
+Frontend change (`f38e5a8`): `AuthContext` no longer calls `/api/auth/refresh` on mount or `/api/auth/logout`. This also removes the CORS error those calls caused in the browser console. It does not close this violation.
 
 Recommended: add refresh (with rotation) and logout routes with tests, then restore session restore and logout in the frontend.
 
@@ -366,7 +366,7 @@ Area / severity: testing / Medium.
 
 Guideline: `testing.md` §5.3 and §5.4.
 
-The only tests are `frontend/components/board/__tests__/BoardCard.test.tsx` and `CommentList.test.tsx`. Nothing covers `lib/apiClient.ts` or the hooks. `AuthContext` now has tests in `frontend/context/__tests__/AuthContext.test.tsx` (uncommitted).
+The only tests are `frontend/components/board/__tests__/BoardCard.test.tsx` and `CommentList.test.tsx`. Nothing covers `lib/apiClient.ts` or the hooks. `AuthContext` now has tests in `frontend/context/__tests__/AuthContext.test.tsx` (`f38e5a8`).
 
 #### V-026: E2E has no Page Objects and no boards/cards specs
 
