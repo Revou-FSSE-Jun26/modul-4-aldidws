@@ -24,10 +24,11 @@ from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
 
-def register_user(email: str, password: str) -> User:
+def register_user(email: str, password: str, name: str) -> User:
     """Register a new user account.
 
     Args:
+        name: The user's display name (surrounding whitespace is stripped).
         email: The prospective user's email address.
         password: The plaintext password (hashed before storage).
 
@@ -50,6 +51,7 @@ def register_user(email: str, password: str) -> User:
 
     user = User(
         email=normalised_email,
+        name=name.strip(),
         password_hash=generate_password_hash(password),
         role="member",
         timezone="UTC",

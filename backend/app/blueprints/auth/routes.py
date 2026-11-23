@@ -51,7 +51,9 @@ def register():
         description: Email already in use.
     """
     data = RegisterSchema().load(request.get_json())
-    user = service.register_user(data["email"], data["password"])
+    user = service.register_user(
+        data["email"], data["password"], data["name"]
+    )
     return jsonify({"data": user.to_dict()}), 201
 
 

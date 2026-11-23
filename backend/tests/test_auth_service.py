@@ -34,12 +34,13 @@ _JWT_SECRET = "test-secret-key-for-tests-only"
 def test_register_user_success(app_ctx, db_session):
     """register_user normalises the email, hashes the password, sets
     role='member', and persists the user to the database."""
-    user = register_user("Test@Example.com ", "TestPass1!")
+    user = register_user("Test@Example.com ", "TestPass1!", "  Test User  ")
 
     assert isinstance(user, User)
     assert user.email == "test@example.com"
     assert user.password_hash != "TestPass1!"
     assert user.role == "member"
+    assert user.name == "Test User"
 
     persisted = db_session.execute(
         db.select(User).where(User.email == "test@example.com")
@@ -55,10 +56,10 @@ def test_register_user_success(app_ctx, db_session):
 def test_register_duplicate_email_raises_conflict(app_ctx, db_session):
     """Registering the same email address a second time raises
     ResourceConflictException."""
-    register_user("dup@example.com", "TestPass1!")
+    register_user("dup@example.com", "TestPass1!", "Test User")
 
     with pytest.raises(ResourceConflictException):
-        register_user("dup@example.com", "TestPass1!")
+        register_user("dup@example.com", "TestPass1!", "Test User")
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +73,7 @@ def test_login_user_success(app_ctx, db_session):
     str(user.id).  A RefreshToken row for the user must exist in the
     database.
     """
-    user = register_user("login@example.com", "TestPass1!")
+    user = register_user("login@example.com", "TestPass1!", "Test User")
 
     result = login_user("login@example.com", "TestPass1!")
 
@@ -111,7 +112,7 @@ def test_login_user_success(app_ctx, db_session):
 
 def test_login_wrong_password_raises_invalid_credentials(app_ctx, db_session):
     """Supplying the wrong password raises InvalidCredentialsError."""
-    register_user("wrongpw@example.com", "TestPass1!")
+    register_user("wrongpw@example.com", "TestPass1!", "Test User")
 
     with pytest.raises(InvalidCredentialsError):
         login_user("wrongpw@example.com", "WrongPassword1!")
