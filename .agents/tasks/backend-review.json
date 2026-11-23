@@ -1,0 +1,9 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    "Analytics counts soft-deleted cards — board_summary counts all cards joining through BoardColumn.board_id == board_id without filtering Card.deleted_at IS NULL. Soft-deleted cards inflate total_cards. Add .where(Card.deleted_at == None) to the count query.",
+    "BoardColumn docstring says 'integer' — The class docstring for position reads 'Zero-based integer determining display order' but the column is Float. Update the docstring to reflect the Float type.",
+    "No IANA validation on timezone field — UpdateUserSchema accepts any string up to 64 characters for timezone, and update_me writes it directly to the database. The User model docstring states the field is used for due-date comparisons, so storing invalid values will cause a runtime error at the consumption site. Add validation against zoneinfo.available_timezones() or document the field as intentionally free-form."
+  ],
+  "reviewDoc": "c:\\Users\\aldid\\modulAIdevelopment\\.agents\\tasks\\backend-review.md"
+}
