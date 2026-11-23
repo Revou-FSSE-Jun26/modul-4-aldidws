@@ -42,7 +42,7 @@ export interface UseCardSearchReturn {
 // API helper
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const DEBOUNCE_MS = 300;
 
 function buildQueryString(filters: CardSearchFilters): string {

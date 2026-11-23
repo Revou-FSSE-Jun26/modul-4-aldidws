@@ -33,7 +33,7 @@ interface CardGroup {
 // Fetch helper
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 async function fetchAssignedCards(token: string): Promise<AssignedCard[]> {
   // GET /api/cards?assignee=me is not yet implemented on the backend.

@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { get } from "@/lib/apiClient";
+import { ApiError } from "@/lib/errors";
 import { BoardCard } from "@/components/board/BoardCard";
 
 // ---------------------------------------------------------------------------
@@ -16,35 +19,8 @@ interface Board {
   updated_at: string;
 }
 
-// ---------------------------------------------------------------------------
-// Fetch helper — kept outside the component so it is not recreated on render
-// ---------------------------------------------------------------------------
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
-
-async function fetchBoards(token: string): Promise<Board[]> {
-  const response = await fetch(`${API_BASE}/api/boards`, {
-    headers: { Authorization: `Bearer ${token}` },
-    // Per frontend.md §7.3: explicitly opt out of Next.js default caching for
-    // authenticated, user-specific data to prevent cross-user cache leakage.
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch boards (${response.status})`);
-  }
-
-  const json = (await response.json()) as { data: Board[] };
-  return json.data;
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
 type FetchState =
   | { status: "idle" }
-  | { status: "loading" }
   | { status: "success"; boards: Board[] }
   | { status: "error"; message: string };
 
@@ -52,45 +28,46 @@ type FetchState =
  * Fetches `GET /api/boards` with the in-memory access token from AuthContext
  * and renders a responsive grid of <BoardCard> tiles.
  *
- * Uses `"use client"` because it consumes AuthContext and manages local state.
- * Kept as a leaf component so the Server Component shell in page.tsx streams
- * instantly without waiting for auth rehydration.
+ * Unauthenticated users are redirected to /login by `useRequireAuth` only
+ * after AuthContext has finished loading. An expired token (401) also
+ * redirects to /login.
  */
 export function BoardsGrid() {
-  const { token, isLoading: isAuthLoading } = useAuth();
+  const router = useRouter();
+  const { token, isAuthLoading } = useRequireAuth();
   const [state, setState] = useState<FetchState>({ status: "idle" });
 
   useEffect(() => {
-    // Wait for the AuthProvider's silent-refresh attempt to finish before
-    // deciding whether to fetch or redirect.
     if (isAuthLoading || !token) return;
 
-    // All setState calls happen inside .then() / .catch() callbacks so they
-    // are never synchronous within the effect body, satisfying the
-    // react-hooks/set-state-in-effect rule.
-    fetchBoards(token)
-      .then((boards) => setState({ status: "success", boards }))
+    let cancelled = false;
+
+    get<Board[]>("/api/boards", { token })
+      .then((boards) => {
+        if (!cancelled) setState({ status: "success", boards });
+      })
       .catch((err: unknown) => {
-        const message =
-          err instanceof Error ? err.message : "An unexpected error occurred.";
-        setState({ status: "error", message });
+        if (cancelled) return;
+        if (err instanceof ApiError && err.isUnauthorized) {
+          router.replace("/login");
+          return;
+        }
+        setState({
+          status: "error",
+          message:
+            err instanceof ApiError
+              ? err.message
+              : "Could not load boards. Please try again.",
+        });
       });
-  }, [token, isAuthLoading]);
 
-  // ----- Unauthenticated — derived directly from context, no effect needed -----
-  if (!isAuthLoading && !token) {
-    return (
-      <div
-        role="alert"
-        className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-      >
-        You must be signed in to view boards.
-      </div>
-    );
-  }
+    return () => {
+      cancelled = true;
+    };
+  }, [token, isAuthLoading, router]);
 
-  // ----- Loading -----
-  if (state.status === "idle" || state.status === "loading" || isAuthLoading) {
+  // ----- Loading (auth loading, redirecting to /login, or fetch in flight) -----
+  if (isAuthLoading || !token || state.status === "idle") {
     return (
       <div
         className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
@@ -141,6 +118,7 @@ export function BoardsGrid() {
           <li key={board.id}>
             <BoardCard
               title={board.name}
+              onCardClick={() => router.push(`/boards/${board.id}`)}
               meta={
                 <span className="text-xs text-muted-foreground">
                   {new Date(board.updated_at).toLocaleDateString(undefined, {

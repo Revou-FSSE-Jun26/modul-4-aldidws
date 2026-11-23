@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -102,7 +102,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
+      // No credentials: the backend CORS config has supports_credentials=False,
+      // so a credentialed cross-origin request would be blocked by the browser.
       body: JSON.stringify({ email, password }),
     });
 

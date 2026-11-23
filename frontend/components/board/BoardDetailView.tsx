@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { get } from "@/lib/apiClient";
+import { ApiError } from "@/lib/errors";
 import { ColumnHeader } from "@/components/board/ColumnHeader";
 import { BoardCard } from "@/components/board/BoardCard";
 
@@ -39,56 +42,45 @@ interface Column {
 }
 
 // ---------------------------------------------------------------------------
-// Fetch helpers
+// Fetch helpers (authenticated through the shared API client)
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
-
-async function fetchBoard(token: string, boardId: string): Promise<Board> {
-  const res = await fetch(`${API_BASE}/api/boards/${boardId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`Failed to fetch board (${res.status})`);
-  const json = (await res.json()) as { data: Board };
-  return json.data;
+/** 404/405 on an optional list endpoint means "not implemented yet". */
+function isEndpointMissing(err: unknown): boolean {
+  return (
+    err instanceof ApiError && (err.statusCode === 404 || err.statusCode === 405)
+  );
 }
 
 async function fetchColumns(token: string, boardId: string): Promise<Column[]> {
   // GET /api/boards/<boardId>/columns is not yet implemented on the backend.
-  // When it ships it should return { data: Column[] }.
-  // Until then we return an empty array so the page renders gracefully.
-  const res = await fetch(`${API_BASE}/api/boards/${boardId}/columns`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-
-  // 404 means the endpoint doesn't exist yet — treat as empty.
-  if (res.status === 404 || res.status === 405) return [];
-  if (!res.ok) throw new Error(`Failed to fetch columns (${res.status})`);
-
-  const json = (await res.json()) as { data: Column[] };
-  // Columns arrive without cards; initialise the cards array here.
-  return json.data.map((col) => ({ ...col, cards: [] }));
+  // Until it ships, a 404/405 is treated as "no columns".
+  try {
+    const columns = await get<Column[]>(`/api/boards/${boardId}/columns`, {
+      token,
+    });
+    // Columns arrive without cards; initialise the cards array here.
+    return columns.map((col) => ({ ...col, cards: [] }));
+  } catch (err) {
+    if (isEndpointMissing(err)) return [];
+    throw err;
+  }
 }
 
 async function fetchCardsForColumn(
   token: string,
   columnId: string,
 ): Promise<Card[]> {
-  // GET /api/v1/cards?column_id=<id> is not yet implemented.
-  // Returns empty until the endpoint exists.
-  const res = await fetch(
-    `${API_BASE}/api/v1/cards?column_id=${columnId}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-    },
-  );
-  if (res.status === 404 || res.status === 405) return [];
-  if (!res.ok) throw new Error(`Failed to fetch cards (${res.status})`);
-  const json = (await res.json()) as { data: Card[] };
-  return json.data;
+  // GET /api/v1/cards?column_id=<id> is not yet implemented; 404/405 => empty.
+  try {
+    return await get<Card[]>(
+      `/api/v1/cards?column_id=${encodeURIComponent(columnId)}`,
+      { token },
+    );
+  } catch (err) {
+    if (isEndpointMissing(err)) return [];
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -97,7 +89,6 @@ async function fetchCardsForColumn(
 
 type ViewState =
   | { status: "idle" }
-  | { status: "loading" }
   | { status: "success"; board: Board; columns: Column[] }
   | { status: "error"; message: string };
 
@@ -113,28 +104,24 @@ interface BoardDetailViewProps {
  * Client Component that fetches a board with its columns and cards,
  * then renders a horizontal Kanban-style layout.
  *
- * Uses `"use client"` because it consumes AuthContext and manages local state.
- *
- * Layout:
- *   - Board name in a sticky page header
- *   - Horizontally scrollable row of columns
- *   - Each column contains a <ColumnHeader> and a vertical list of <BoardCard>
+ * Unauthenticated users are redirected to /login by `useRequireAuth` only
+ * after AuthContext has finished loading. An expired token (401) also
+ * redirects to /login.
  */
 export function BoardDetailView({ boardId }: BoardDetailViewProps) {
-  const { token, isLoading: isAuthLoading } = useAuth();
+  const router = useRouter();
+  const { token, isAuthLoading } = useRequireAuth();
   const [state, setState] = useState<ViewState>({ status: "idle" });
 
   useEffect(() => {
     if (isAuthLoading || !token) return;
 
-    // token is guaranteed non-null here (checked above).
-    // All setState calls happen inside async callbacks so they are never
-    // synchronous within the effect body, satisfying react-hooks/set-state-in-effect.
+    let cancelled = false;
     const t = token;
 
     async function load() {
       const [board, columns] = await Promise.all([
-        fetchBoard(t, boardId),
+        get<Board>(`/api/boards/${boardId}`, { token: t }),
         fetchColumns(t, boardId),
       ]);
 
@@ -149,38 +136,37 @@ export function BoardDetailView({ boardId }: BoardDetailViewProps) {
       // Sort columns by position for a deterministic render order.
       columnsWithCards.sort((a, b) => a.position - b.position);
 
-      setState({ status: "success", board, columns: columnsWithCards });
+      if (!cancelled) {
+        setState({ status: "success", board, columns: columnsWithCards });
+      }
     }
 
     load().catch((err: unknown) => {
-      setState({
-        status: "error",
-        message:
-          err instanceof Error ? err.message : "An unexpected error occurred.",
-      });
+      if (cancelled) return;
+      if (err instanceof ApiError && err.isUnauthorized) {
+        router.replace("/login");
+        return;
+      }
+      let message = "Could not load this board. Please try again.";
+      if (err instanceof ApiError) {
+        message = err.isNotFound ? "Board not found." : err.message;
+      }
+      setState({ status: "error", message });
     });
-  }, [token, isAuthLoading, boardId]);
 
-  // ----- Unauthenticated — derived directly from context, no effect needed -----
-  if (!isAuthLoading && !token) {
-    return (
-      <div className="px-4 py-8 sm:px-6 lg:px-8">
-        <div
-          role="alert"
-          className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-        >
-          You must be signed in to view this board.
-        </div>
-      </div>
-    );
-  }
+    return () => {
+      cancelled = true;
+    };
+  }, [token, isAuthLoading, boardId, router]);
 
-  // ----- Loading -----
-  if (state.status === "idle" || state.status === "loading" || isAuthLoading) {
+  // ----- Loading (auth loading, redirecting to /login, or fetch in flight) -----
+  if (isAuthLoading || !token || state.status === "idle") {
     return (
-      <div className="flex gap-4 overflow-x-auto px-4 py-8 sm:px-6 lg:px-8 pb-4"
-           aria-busy="true"
-           aria-label="Loading board">
+      <div
+        className="flex gap-4 overflow-x-auto px-4 py-8 sm:px-6 lg:px-8 pb-4"
+        aria-busy="true"
+        aria-label="Loading board"
+      >
         {Array.from({ length: 3 }).map((_, i) => (
           <div
             // eslint-disable-next-line react/no-array-index-key

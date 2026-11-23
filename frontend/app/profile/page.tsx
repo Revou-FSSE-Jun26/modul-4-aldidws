@@ -8,7 +8,7 @@ import { BaseButton } from "@/components/shared/BaseButton";
 // API helper
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 interface UpdatedUser {
   id: string;
