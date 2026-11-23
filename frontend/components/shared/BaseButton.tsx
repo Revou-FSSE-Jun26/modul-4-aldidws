@@ -2,7 +2,7 @@
 
 import { type ButtonHTMLAttributes, type ReactNode } from "react";
 
-type ButtonVariant = "primary" | "secondary" | "danger";
+type ButtonVariant = "primary" | "secondary" | "danger" | "destructive";
 
 interface BaseButtonProps {
   variant?: ButtonVariant;
@@ -18,6 +18,11 @@ const variantClasses: Record<ButtonVariant, string> = {
   secondary:
     "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus-visible:ring-gray-400 disabled:text-gray-400 disabled:border-gray-200",
   danger:
+    "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500 disabled:bg-red-300",
+  // `destructive` is the canonical variant name; `danger` is kept as a
+  // non-breaking alias mapping to the same classes so existing call sites
+  // (e.g. delete buttons) keep working.
+  destructive:
     "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500 disabled:bg-red-300",
 };
 
