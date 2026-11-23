@@ -110,7 +110,7 @@ RevoTask was built end-to-end inside the **Kiro AI IDE**, following this iterati
 
 | Feature                                                                         | Status |
 | ------------------------------------------------------------------------------- | ------ |
-| JWT authentication (register, login, silent refresh, logout)                    | ✅     |
+| JWT authentication (register, login; client-side logout, no refresh endpoint)   | ✅     |
 | Board CRUD                                                                      | ✅     |
 | Column CRUD + reorder (`PATCH /api/boards/<id>/columns/reorder`)                | ✅     |
 | Card CRUD + position move (`PATCH /api/cards/<id>/position`) with Float `order` | ✅     |
