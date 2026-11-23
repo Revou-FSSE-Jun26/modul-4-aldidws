@@ -76,3 +76,7 @@ Thumbs.db
 *.log.*
 *.pem
 .vercel
+
+# ----- AI agent working files (plans, reviews, reports) -------
+.agents/
+**/.agents/
