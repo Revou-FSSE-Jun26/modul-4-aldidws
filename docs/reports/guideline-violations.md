@@ -10,9 +10,9 @@ Audit basis: git `HEAD` is `b9cf8d1`. The working tree only had untracked files 
 
 | Status                               | Count |
 | ------------------------------------ | ----: |
-| Fixed (checked against current code) |     8 |
-| Partially fixed                      |     1 |
-| Open                                 |    22 |
+| Fixed (checked against current code) |    10 |
+| Partially fixed                      |     2 |
+| Open                                 |    19 |
 
 | Severity | Count |
 | -------- | ----: |
@@ -39,7 +39,7 @@ Audit basis: git `HEAD` is `b9cf8d1`. The working tree only had untracked files 
 
 Severity levels: High means a security hole or broken functionality. Medium means a deviation from the guidelines that affects maintainability, the API contract or testing. Low means cosmetic, documentation or file-layout issues.
 
-Eight of the 31 findings are fixed and one is partly fixed. The other 22 are open, including 4 of the 5 High findings (V-009, V-010, V-011, V-031). The only fixed High finding is V-003.
+Ten of the 31 findings are fixed and two are partly fixed. The other 19 are open, including 3 of the 5 High findings (V-009, V-010, V-011). The fixed High findings are V-003 and V-031. V-012 and V-031 were fixed and V-014 was partly fixed after the audit commit. None of these changes are committed yet.
 
 ## 2. Method and evidence
 
@@ -65,9 +65,9 @@ Guideline references use two forms. `guidelines/<file>.md "<title>"` points to a
 | V-009 | api-contract | High     | Frontend calls `/api/auth/refresh` and `/api/auth/logout`, which the backend does not have | Open              | Inspection                  |
 | V-010 | security     | High     | Refresh token written through `document.cookie` (not HttpOnly)                             | Open              | Inspection                  |
 | V-011 | security     | High     | No rate limiting                                                                           | Open              | Inspection                  |
-| V-012 | security     | Medium   | CORS not configured in code                                                                | Open              | Inspection                  |
+| V-012 | security     | Medium   | CORS not configured in code                                                                | Fixed (uncommitted) | Inspection                  |
 | V-013 | security     | Medium   | Password hashing is not explicitly Argon2id or bcrypt                                      | Open              | Inspection                  |
-| V-014 | security     | Low      | Default secret and DB URL in `DevelopmentConfig`                                           | Open              | Inspection                  |
+| V-014 | security     | Low      | Default secret and DB URL in `DevelopmentConfig`                                           | Partial           | Inspection                  |
 | V-015 | backend      | Low      | Ad-hoc 401 response copied four times in the auth decorator                                | Open              | Inspection                  |
 | V-016 | frontend     | Medium   | Direct `fetch()` in components, hooks and context                                          | Open              | Inspection                  |
 | V-017 | frontend     | Medium   | `NEXT_PUBLIC_API_URL` missing from `.env.example`                                          | Open              | Inspection (+ audit report) |
@@ -84,7 +84,7 @@ Guideline references use two forms. `guidelines/<file>.md "<title>"` points to a
 | V-028 | structure    | Low      | Duplicate documents (`VIOLATION_REPORT.md`, `.kiro/specs` vs `specs`)                      | Open              | Inspection                  |
 | V-029 | docs         | Medium   | Earlier violation report contained claims that cannot be verified                          | Partial           | Inspection                  |
 | V-030 | frontend     | Low      | Unused imports and misleading comments                                                     | Open              | Inspection (+ report)       |
-| V-031 | security     | High     | `wsgi.py` uses `DevelopmentConfig`; `ProductionConfig` is never used                       | Open              | Inspection                  |
+| V-031 | security     | High     | `wsgi.py` uses `DevelopmentConfig`; `ProductionConfig` is never used                       | Fixed (uncommitted) | Inspection                  |
 
 ## 4. Entries
 
@@ -160,6 +160,25 @@ Area / severity: frontend / Low. Found by the audit checklist (`frontend-audit-r
 
 Status: fixed in `6f260ff`. `components/shared/BaseButton.tsx:5` has the `destructive` variant and `lib/toast.ts:24` exports `showLoading`.
 
+#### V-012: CORS not configured in code
+
+Area / severity: security / Medium.
+
+Guideline: `security.md` §8.
+
+Before: `.env.example` and `backend/app/.env.example` defined `CORS_ALLOWED_ORIGINS`, but `backend/app` had no CORS code and `requirements.txt` had no flask-cors.
+
+Status: fixed, not committed yet. `flask-cors==6.0.5` is pinned and `create_app` (`backend/app/__init__.py`) allows only the origins in `CORS_ALLOWED_ORIGINS`, for `/api/*`, with the methods GET, POST, PUT, PATCH, DELETE, OPTIONS and the headers `Content-Type` and `Authorization`. Credentials are off because auth uses the Bearer header and the backend sets no cookies. Production refuses `*` and origins without `http(s)://`. Tests: `backend/tests/api/test_cors_health.py` (allowed and disallowed preflight, no wildcard, unlisted header) and `backend/tests/unit/test_config.py`.
+
+#### V-031: `wsgi.py` uses `DevelopmentConfig`; `ProductionConfig` is unused
+
+Area / severity: security / High.
+
+Guideline: `security.md` §16 ("Disable debug mode in production") and §19, and `development-workflow.md` §6 ("Validate required environment variables at application startup").
+
+Before: `wsgi.py` called `create_app()`, whose default was `DevelopmentConfig` (`DEBUG = True`), and `ProductionConfig._validate` was never called.
+
+Status: fixed, not committed yet. `create_app` now picks the config with `get_config_object()` in `backend/app/config.py`. It reads `APP_ENV`, then `FLASK_ENV`, and uses `ProductionConfig` when neither is set. An unknown value raises `RuntimeError`. `ProductionConfig` has `DEBUG = False` and checks its variables in `init_app`, which `create_app` calls. Tests: `backend/tests/unit/test_config.py` (default is production, debug off, startup fails without each required variable). Importing `wsgi` with dummy variables gave `DEBUG` False.
 ### Partially fixed
 
 #### V-029: Earlier violation report contained claims that cannot be verified
@@ -181,6 +200,15 @@ The WRONG/CORRECT examples in `guidelines/backend.md` and `guidelines/frontend.m
 
 Recommended: delete `VIOLATION_REPORT.md` or replace it with a pointer to this file. Also check `docs/reports/ai-output-comparison.md`, which was not audited (see section 7).
 
+#### V-014: Default secret and DB URL in `DevelopmentConfig`
+
+Area / severity: security / Low.
+
+Guideline: `security.md` §2 item 8 and §19 item 1.
+
+`DevelopmentConfig` in `backend/app/config.py` still has local defaults for `JWT_SECRET_KEY`, `SECRET_KEY` and `DATABASE_URL` (values redacted). `TestingConfig` uses a literal key meant only for tests. No `.env` file is tracked (`git ls-files` shows only `.env.example`).
+
+Status: partial, not committed yet. `ProductionConfig` no longer has any default for `SECRET_KEY`, `JWT_SECRET_KEY` or `DATABASE_URL`, and startup fails with a message that names the missing variable. Production is also the default when `APP_ENV` is unset (V-031), so the development defaults are only used when someone sets `APP_ENV=development`. The defaults in `DevelopmentConfig` were kept on purpose for local work.
 ### Open
 
 #### V-009: Auth endpoints called by the frontend do not exist
@@ -217,16 +245,6 @@ A grep for `Limiter|limiter` in `backend/app` returns nothing, and `backend/requ
 
 Recommended: rate limit `/api/auth/login` and `/register` using shared storage, not per-process counters (`security.md` §11).
 
-#### V-012: CORS not configured in code
-
-Area / severity: security / Medium.
-
-Guideline: `security.md` §8.
-
-`.env.example:13` and `backend/app/.env.example` define `CORS_ALLOWED_ORIGINS`, but `backend/app` has no CORS code and `requirements.txt` has no flask-cors. The variable is unused.
-
-Limitation: if deployment uses a reverse proxy or a shared origin, CORS may be handled outside this repo. That cannot be checked from here.
-
 #### V-013: Password hashing is not explicitly Argon2id or bcrypt
 
 Area / severity: security / Medium.
@@ -236,16 +254,6 @@ Guideline: `security.md` §3.2.
 `backend/app/blueprints/auth/service.py:53` calls Werkzeug's `generate_password_hash(password)` with the default method and no explicit settings. I did not run code to check what the default is in the installed version.
 
 Recommended: use Argon2id or bcrypt with documented parameters.
-
-#### V-014: Default secret and DB URL in `DevelopmentConfig`
-
-Area / severity: security / Low.
-
-Guideline: `security.md` §2 item 8 and §19 item 1.
-
-`backend/app/config.py:29` gives `JWT_SECRET_KEY` a literal default (value redacted) and `config.py:25-28` gives a default database URL. `TestingConfig` (`config.py:40`) uses a literal key meant only for tests.
-
-Impact: limited to local development as long as V-031 is fixed. No `.env` file is tracked (`git ls-files` shows only `.env.example`).
 
 #### V-015: Ad-hoc 401 response copied in the auth decorator
 
@@ -375,30 +383,17 @@ Guideline: `development-workflow.md` §3 Stage 5 item 10, and Stage 7 ("remove u
 
 `components/board/MyTasksList.tsx:6` imports `BaseButton`, while the comments at lines 150 and 237 say it is used. `eslint-fix-report.md` lists the unused import (report). `app/page.tsx:1` imports `Suspense`, which is not used in the file (line 1 matched against the lint report). `eslint-fix-report.md` records 11 lint warnings in total (report).
 
-#### V-031: `wsgi.py` uses `DevelopmentConfig`; `ProductionConfig` is unused
-
-Area / severity: security / High.
-
-Guideline: `security.md` §16 ("Disable debug mode in production") and §19, and `development-workflow.md` §6 ("Validate required environment variables at application startup").
-
-`backend/wsgi.py:4` calls `create_app()` with no argument. The default in `create_app` is `app.config.DevelopmentConfig` (`backend/app/__init__.py:15`), which sets `DEBUG = True` (`config.py:24`) and has a default secret (V-014). `ProductionConfig` (`config.py:43`) is not referenced anywhere in `backend/` or `.github/` (grep for `ProductionConfig`), and `ProductionConfig._validate` (`config.py:55`) is never called. The `wsgi.py` docstring says the file is the production entry point (Gunicorn).
-
-Impact: a deployment through `wsgi.py` would run with debug on and without env validation. The README says the app is not deployed yet (commit `b9cf8d1`), so the risk is latent.
-
-Recommended: pick the config from the environment (`FLASK_ENV` or a dedicated variable), call `_validate` at startup and add a test.
-
 ## 5. Open violations by priority
 
 | Priority | IDs                                                           | Severity | Summary                                |
 | -------- | ------------------------------------------------------------- | -------- | -------------------------------------- |
-| 1        | V-031                                                         | High     | `wsgi.py` uses `DevelopmentConfig`     |
-| 2        | V-010                                                         | High     | Refresh token in a non-HttpOnly cookie |
-| 3        | V-009                                                         | High     | Refresh and logout endpoints missing   |
-| 4        | V-011                                                         | High     | No rate limiting                       |
-| 5        | V-012, V-013, V-016, V-017, V-018, V-019, V-024, V-025, V-026 | Medium   | See section 4                          |
-| 6        | V-014, V-015, V-020, V-021, V-022, V-023, V-027, V-028, V-030 | Low      | See section 4                          |
+| 1        | V-010                                                         | High     | Refresh token in a non-HttpOnly cookie |
+| 2        | V-009                                                         | High     | Refresh and logout endpoints missing   |
+| 3        | V-011                                                         | High     | No rate limiting                       |
+| 4        | V-013, V-016, V-017, V-018, V-019, V-024, V-025, V-026 | Medium   | See section 4                          |
+| 5        | V-015, V-020, V-021, V-022, V-023, V-027, V-028, V-030 | Low      | See section 4                          |
 
-22 entries are open (V-009 to V-031 except V-029). V-029 is partially fixed: this document replaces the old report text, but the root `VIOLATION_REPORT.md` has not been replaced.
+19 entries are open (V-009, V-010, V-011, V-013, V-015 to V-028, V-030). V-014 and V-029 are partially fixed. V-029: this document replaces the old report text, but the root `VIOLATION_REPORT.md` has not been replaced.
 
 ## 6. Checked, no violation found
 

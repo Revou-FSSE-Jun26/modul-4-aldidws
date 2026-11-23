@@ -7,24 +7,45 @@ the factory testable and avoids circular-import issues.
 """
 from flasgger import Swagger
 from flask import Flask
+from werkzeug.utils import import_string
 
 from app.common.error_handlers import register_error_handlers
-from app.extensions import db
+from app.config import get_config_object
+from app.extensions import cors, db
 
 
-def create_app(config_object: str = "app.config.DevelopmentConfig") -> Flask:
+def create_app(config_object: str | None = None) -> Flask:
     """Create, configure, and return a Flask application instance.
 
     Args:
         config_object: Dotted-path string of the config class to load.
-            Defaults to ``DevelopmentConfig``.  Pass
+            Defaults to the class selected by ``APP_ENV`` / ``FLASK_ENV``
+            (production when neither is set).  Pass
             ``"app.config.TestingConfig"`` in tests.
 
     Returns:
         A fully initialised Flask application.
     """
     app = Flask(__name__)
+    config_object = config_object or get_config_object()
     app.config.from_object(config_object)
+    config_cls = import_string(config_object)
+    if hasattr(config_cls, "init_app"):
+        config_cls.init_app(app)
+
+    # CORS: explicit allowlist. Auth uses the Bearer header, not cookies.
+    cors.init_app(
+        app,
+        resources={
+            r"/api/*": {
+                "origins": app.config.get("CORS_ALLOWED_ORIGINS", []),
+                "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+                "allow_headers": ["Content-Type", "Authorization"],
+                "supports_credentials": False,
+                "max_age": 600,
+            }
+        },
+    )
 
     # Swagger / OpenAPI configuration
     app.config["SWAGGER"] = {
