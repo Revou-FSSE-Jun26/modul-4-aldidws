@@ -3,7 +3,6 @@
 import {
   createContext,
   useContext,
-  useEffect,
   useState,
   type ReactNode,
 } from "react";
@@ -25,7 +24,7 @@ interface AuthContextValue {
   currentUser: AuthUser | null;
   /** In-memory access token. NEVER stored in localStorage or sessionStorage. */
   token: string | null;
-  /** True while the initial silent-refresh attempt is in progress. */
+  /** Always false: nothing async runs on mount (the backend has no refresh endpoint). */
   isLoading: boolean;
   login(email: string, password: string): Promise<void>;
   logout(): Promise<void>;
@@ -38,12 +37,8 @@ interface AuthContextValue {
 
 interface LoginResponseData {
   access_token: string;
-  refresh_token: string;
-  user: AuthUser;
-}
-
-interface RefreshResponseData {
-  access_token: string;
+  /** Returned by the backend but intentionally not stored anywhere. */
+  refresh_token?: string;
   user: AuthUser;
 }
 
@@ -64,36 +59,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // -------------------------------------------------------------------------
-  // Silent refresh on mount — restores the session via the httpOnly cookie
-  // -------------------------------------------------------------------------
-  useEffect(() => {
-    async function attemptSilentRefresh() {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
-          method: "POST",
-          credentials: "include", // sends the refresh_token cookie
-        });
-
-        if (!response.ok) {
-          // 401 or any non-2xx: session cannot be restored; stay logged out
-          return;
-        }
-
-        const { data }: ApiResponse<RefreshResponseData> = await response.json();
-        setToken(data.access_token);
-        setCurrentUser(data.user);
-      } catch {
-        // Network failure: stay logged out silently
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    void attemptSilentRefresh();
-  }, []);
+  // No session restore: the backend has no refresh endpoint, so nothing async
+  // runs on mount and auth is never in a loading state.
+  const isLoading = false;
 
   // -------------------------------------------------------------------------
   // login
@@ -118,33 +86,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setToken(data.access_token);
     setCurrentUser(data.user);
-
-    // TODO: Once the backend sends Set-Cookie: HttpOnly for refresh_token,
-    // remove this client-side cookie write. The backend should set the httpOnly
-    // cookie via its Set-Cookie response header instead.
-    document.cookie = `refresh_token=${data.refresh_token}; path=/; SameSite=Strict`;
   }
 
   // -------------------------------------------------------------------------
   // logout
   // -------------------------------------------------------------------------
   async function logout(): Promise<void> {
-    // Fire-and-forget: backend endpoint not yet implemented; swallow errors
-    try {
-      await fetch(`${API_BASE_URL}/api/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-    } catch {
-      // Intentionally ignored — clear local state regardless
-    }
-
+    // The backend has no logout endpoint, so this only clears client state.
+    // The access token stays valid until it expires.
     setToken(null);
     setCurrentUser(null);
-
-    // Clear the refresh token cookie
-    document.cookie = "refresh_token=; Max-Age=0; path=/";
   }
 
   // -------------------------------------------------------------------------
