@@ -1,295 +1,418 @@
-# AI Code Violation Report — RevoTask
+# Guideline Violation Report: RevoTask
 
-This document records guideline violations found in AI-generated code during the
-development of RevoTask, the corrective actions applied, and the specific rules
-that were violated.
+This report lists the guideline violations I could confirm in the AI-generated code and artifacts in the RevoTask repository. It follows `.kiro/steering/structure.md` §4 and §8: each entry gives the guideline that was violated, what the AI actually produced, and the correction that was applied (or is still needed). The report was rewritten from scratch and replaces the earlier version (see V-029).
 
-Guideline references use the format `<file>§<section>`.
+Audit basis: git `HEAD` is `b9cf8d1`. The working tree only had untracked files under `.agents/` (`git status --short`). No tests, lint or build were re-run for this audit. Findings marked "(report)" come from existing agent reports and were not re-verified by running anything. No secret values are shown. Where a secret exists, only its location is given and the value is redacted.
 
----
+## 1. Summary
 
-## Violation 1 — Business Logic in Route Handler
+31 violations are recorded. Every number below was recounted from the entries in section 3.
 
-### File / Location
-`app/blueprints/comments/routes.py` — `create_comment()` route handler (original version)
+| Status                               | Count |
+| ------------------------------------ | ----: |
+| Fixed (checked against current code) |     8 |
+| Partially fixed                      |     1 |
+| Open                                 |    22 |
 
-### Rule Violated
-**`backend.md §3` — Route Handler Standards:**
-> "Routes MUST NOT contain business logic or direct SQLAlchemy queries."
-> "Routes MUST delegate business operations to functions in the corresponding `service.py`."
+| Severity | Count |
+| -------- | ----: |
+| High     |     5 |
+| Medium   |    13 |
+| Low      |    13 |
 
-**`backend.md §4` — Service Layer Standards:**
-> "The service layer MUST contain application use cases and business rules."
-> "Services MUST enforce business validation and resource authorization."
+| Area                | Count |
+| ------------------- | ----: |
+| frontend            |     6 |
+| backend             |     4 |
+| security            |     7 |
+| api-contract        |     3 |
+| structure           |     5 |
+| testing             |     3 |
+| workflow (build/CI) |     2 |
+| docs                |     1 |
 
-### Code Before Fix
-```python
-# app/blueprints/comments/routes.py  (AI-generated, violating version)
-@comments_bp.route("/<card_id>/comments", methods=["POST"])
-@token_required
-def create_comment(current_user, card_id):
-    # Direct DB queries and ownership checks inside the route — VIOLATION
-    card = db.session.get(Card, uuid.UUID(card_id))
-    if card is None:
-        return jsonify({"error": {"code": "NOT_FOUND", "message": "Card not found"}}), 404
-    board = db.session.get(Board, card.column.board_id)
-    if board.owner_id != current_user.id:
-        return jsonify({"error": {"code": "FORBIDDEN", "message": "Access denied"}}), 403
-    data = CreateCommentSchema().load(request.get_json() or {})
-    comment = CardComment(card_id=card.id, author_id=current_user.id, body=data["body"])
-    db.session.add(comment)
-    db.session.commit()
-    return jsonify({"data": comment_to_dict(comment)}), 201
-```
+| Where the finding came from                                                  |                   Count |
+| ---------------------------------------------------------------------------- | ----------------------: |
+| Lint/build tooling run against AI code (report)                              | 3 (V-001, V-002, V-003) |
+| AI review of AI code (`backend-review.md/.json`, `frontend-audit-report.md`) |      5 (V-004 to V-008) |
+| Direct inspection of code and config during this audit                       |                      23 |
 
-### Fix Applied
-Extracted all card-lookup, board-ownership verification, and database writes into
-`comments/service.py`. The route now only loads the request body, calls the service,
-and returns the serialised result:
+Severity levels: High means a security hole or broken functionality. Medium means a deviation from the guidelines that affects maintainability, the API contract or testing. Low means cosmetic, documentation or file-layout issues.
 
-```python
-# app/blueprints/comments/routes.py  (corrected)
-@comments_bp.route("/<card_id>/comments", methods=["POST"])
-@token_required
-def create_comment(current_user, card_id):
-    data = CreateCommentSchema().load(request.get_json() or {})
-    comment = service.create_comment(current_user, uuid.UUID(card_id), data)
-    return jsonify({"data": comment_to_dict(comment)}), 201
-```
+Eight of the 31 findings are fixed and one is partly fixed. The other 22 are open, including 4 of the 5 High findings (V-009, V-010, V-011, V-031). The only fixed High finding is V-003.
 
-```python
-# app/blueprints/comments/service.py  (new, contains the business logic)
-def create_comment(current_user, card_id: uuid.UUID, data: dict) -> CardComment:
-    card = _get_card_for_user(current_user, card_id)
-    comment = CardComment(card_id=card.id, author_id=current_user.id, body=data["body"])
-    db.session.add(comment)
-    db.session.commit()
-    return comment
-```
+## 2. Method and evidence
 
----
+1. Read all steering files in `.kiro/steering/` (structure, security, testing, architecture, development-workflow, api-contracts) and `guidelines/frontend.md`, `guidelines/backend.md`, `guidelines/database.md`.
+2. Read the existing reports: `.agents/tasks/backend-review.md` and `.json`, `.agents/tasks/restructure-plan.md`, `.agents/tasks/swagger-report.md`, `frontend/.agents/tasks/eslint-fix-report.md`, `frontend/.agents/tasks/frontend-audit-report.md`.
+3. Used `git log`, `git log -S` and `git show --stat` to confirm the fix commits and to check whether the "before" code ever existed in history.
+4. Opened the files in `backend/app`, `frontend`, `e2e`, `.github/workflows` and `.env.example` and checked each path:line cited here against them.
 
-## Violation 2 — Wrong Column Type for Ordering (`Integer` instead of `Float`)
+Guideline references use two forms. `guidelines/<file>.md "<title>"` points to a project guideline, which has no section numbers, so it is cited by title. `<steering>.md §N` points to a numbered steering file. The earlier report cited numbers such as `backend.md §3`, which do not match the content of the files, so they are no longer used.
 
-### File / Location
-`app/models/card.py` — `position` column (original version)
-`app/blueprints/cards/schema.py` — `CardPositionSchema.position` field
+## 3. Index
 
-### Rule Violated
-**`database.md §11` — Ordering and Reordering:**
-> "Do not use floating-point values for ordering."  ← the guideline flags this as a
-> database-level concern; however, the **rubric** explicitly requires `db.Float` for the
-> `order` column to support midpoint insertion without renumbering.
-> "Define how positions are initialized."
-> "Ensure the database and service layer preserve valid ordering."
+| ID    | Area         | Severity | Title                                                                                      | Status            | Source                      |
+| ----- | ------------ | -------- | ------------------------------------------------------------------------------------------ | ----------------- | --------------------------- |
+| V-001 | frontend     | Medium   | Synchronous `setState` inside `useEffect`                                                  | Fixed (`42a645b`) | Lint (report)               |
+| V-002 | frontend     | Medium   | `ref.current` written during render                                                        | Fixed (`42a645b`) | Lint (report)               |
+| V-003 | workflow     | High     | `next build` failed to prerender `/`                                                       | Fixed (`2f2e508`) | Build (report)              |
+| V-004 | backend      | Low      | Analytics counted soft-deleted cards                                                       | Fixed (`dd8e301`) | Review                      |
+| V-005 | backend      | Low      | `BoardColumn` docstring said "integer" for a Float                                         | Fixed (`dd8e301`) | Review                      |
+| V-006 | security     | Medium   | `timezone` field had no IANA validation                                                    | Fixed (`dd8e301`) | Review                      |
+| V-007 | backend      | Low      | Duplicate `per_page` cap (dead code)                                                       | Fixed (`dd8e301`) | Review                      |
+| V-008 | frontend     | Low      | `BaseButton` had no `destructive` variant, `toast` had no `showLoading`                    | Fixed (`6f260ff`) | Audit checklist             |
+| V-009 | api-contract | High     | Frontend calls `/api/auth/refresh` and `/api/auth/logout`, which the backend does not have | Open              | Inspection                  |
+| V-010 | security     | High     | Refresh token written through `document.cookie` (not HttpOnly)                             | Open              | Inspection                  |
+| V-011 | security     | High     | No rate limiting                                                                           | Open              | Inspection                  |
+| V-012 | security     | Medium   | CORS not configured in code                                                                | Open              | Inspection                  |
+| V-013 | security     | Medium   | Password hashing is not explicitly Argon2id or bcrypt                                      | Open              | Inspection                  |
+| V-014 | security     | Low      | Default secret and DB URL in `DevelopmentConfig`                                           | Open              | Inspection                  |
+| V-015 | backend      | Low      | Ad-hoc 401 response copied four times in the auth decorator                                | Open              | Inspection                  |
+| V-016 | frontend     | Medium   | Direct `fetch()` in components, hooks and context                                          | Open              | Inspection                  |
+| V-017 | frontend     | Medium   | `NEXT_PUBLIC_API_URL` missing from `.env.example`                                          | Open              | Inspection (+ audit report) |
+| V-018 | structure    | Medium   | Frontend has no `features/` or `lib/api/`                                                  | Open              | Inspection                  |
+| V-019 | api-contract | Medium   | Inconsistent API prefix (`/api` vs `/api/v1`)                                              | Open              | Inspection                  |
+| V-020 | api-contract | Low      | JSON naming, pagination meta and error codes differ from api-contracts                     | Open              | Inspection                  |
+| V-021 | structure    | Low      | `common/` lacks `permissions.py`, `responses.py`, `logging.py`                             | Open              | Inspection                  |
+| V-022 | structure    | Low      | `schema.py` instead of `schemas.py`                                                        | Open              | Inspection                  |
+| V-023 | structure    | Low      | `backend/app/.env.example` is outside the target structure                                 | Open              | Inspection                  |
+| V-024 | testing      | Medium   | Backend tests are flat, no `api/`, `integration/`, `security/`                             | Open              | Inspection                  |
+| V-025 | testing      | Medium   | Frontend tests cover only two components                                                   | Open              | Inspection                  |
+| V-026 | testing      | Medium   | E2E has no Page Objects and no boards/cards specs                                          | Open              | Inspection (+ audit report) |
+| V-027 | workflow     | Low      | CI: `npx next lint`, workflow name, e2e dependencies                                       | Open              | Inspection (+ report)       |
+| V-028 | structure    | Low      | Duplicate documents (`VIOLATION_REPORT.md`, `.kiro/specs` vs `specs`)                      | Open              | Inspection                  |
+| V-029 | docs         | Medium   | Earlier violation report contained claims that cannot be verified                          | Partial           | Inspection                  |
+| V-030 | frontend     | Low      | Unused imports and misleading comments                                                     | Open              | Inspection (+ report)       |
+| V-031 | security     | High     | `wsgi.py` uses `DevelopmentConfig`; `ProductionConfig` is never used                       | Open              | Inspection                  |
 
-**`database.md §5` — Data Types and Column Definitions:**
-> "Choose database types according to the domain meaning and validation requirements."
-> "Use `Numeric` for exact decimal values." (Float chosen deliberately for midpoint
-> insertion semantics, documented in the model.)
+## 4. Entries
 
-### Code Before Fix
-```python
-# app/models/card.py
-position: Mapped[int] = mapped_column(
-    Integer,
-    nullable=False,
-    default=0,
-)
+Each entry has the same fields: area and severity, guideline, what happened, evidence, and status or fix.
 
-# Consequence: inserting a card between position 1 and 2 required shifting
-# every card at position >= 2 — an O(n) operation on every insert.
-```
+### Fixed
 
-```python
-# app/blueprints/cards/schema.py
-class CardPositionSchema(Schema):
-    column_id = fields.UUID(required=True)
-    position = fields.Integer(required=True, validate=validate.Range(min=0))
-```
+#### V-001: Synchronous `setState` inside `useEffect`
 
-### Fix Applied
-Renamed column to `order`, changed type to `Float`, updated check constraint to use
-double-quoted identifier (`"order"` is a SQL reserved word), updated schema and all
-service/route references:
+Area / severity: frontend / Medium. Found by `react-hooks/set-state-in-effect` (report).
 
-```python
-# app/models/card.py
-order: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-__table_args__ = (
-    CheckConstraint('"order" >= 0', name="ck_cards_order_nonnegative"),
-    Index("ix_cards_column_id_order", "column_id", "order"),
-)
-```
+Guideline: `guidelines/frontend.md "No setState Calls in useEffect Render Phase"`.
 
-```python
-# app/blueprints/cards/schema.py
-class CardPositionSchema(Schema):
-    column_id = fields.UUID(required=True)
-    order = fields.Float(required=True, validate=validate.Range(min=0))
-```
+The AI-written components called `setState` directly inside effects. `frontend/.agents/tasks/eslint-fix-report.md` (FIX 3 to FIX 6) records the pattern in `BoardDetailView`, `BoardsGrid`, `MyTasksList` and `CardDetailModal`. The "before" code cannot be viewed directly, because git only holds the fix diff.
 
----
+Fix: commit `42a645b` (6 files: `BoardDetailView.tsx`, `BoardsGrid.tsx`, `CardDetailModal.tsx`, `MyTasksList.tsx`, `useCardSearch.ts`, `useDragAndDrop.ts`). The auth error is now derived during render, and `setState` is only called in async callbacks. Comment state moved to a reducer.
 
-## Violation 3 — Raw `<button>` Instead of Shared `<BaseButton>` Component
+Checked in current code: `BoardDetailView.tsx:165`, `BoardsGrid.tsx:81` and `MyTasksList.tsx:178` use `if (!isAuthLoading && !token)`. `CardDetailModal.tsx:280` uses `useReducer`.
 
-### File / Location
-`frontend/app/login/page.tsx` — submit button (original version)
+#### V-002: `ref.current` written during render
 
-### Rule Violated
-**`frontend.md §2.5` — Component Composition:**
-> "MUST place genuinely shared UI primitives in `components/shared/`."
-> "MUST avoid creating generic components for one-off use cases without a clear
-> reuse requirement." (Corollary: once a shared component exists, USE it.)
+Area / severity: frontend / Medium. Found by `react-hooks/refs` (report).
 
-**`frontend.md §4.8` — Shared UI Components:**
-> "SHOULD use a `Base` prefix for generic shared primitives when consistent with
-> the existing project convention."
-> (The project already has `BaseButton`, `BaseModal` — the convention is established.)
+Guideline: none of `guidelines/*.md` covers this directly. It breaks a React rule enforced by the project lint config, and falls under `development-workflow.md` Stage 6 (ESLint must be clean).
 
-**`frontend.md §5.7` — Shared Primitive Styling:**
-> "MUST centralise recurring base styles for shared primitives."
-> "MUST avoid duplicating long class strings throughout the application."
+Evidence: `eslint-fix-report.md` (FIX 1 and FIX 2).
 
-### Code Before Fix
-```tsx
-// app/login/page.tsx  (AI-generated, violating version)
-<button
-  type="submit"
-  disabled={isSubmitting}
-  className="mt-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium
-             text-white hover:bg-blue-700 focus:outline-none
-             focus-visible:ring-2 focus-visible:ring-blue-500
-             disabled:cursor-not-allowed disabled:opacity-60"
->
-  {isSubmitting ? "Signing in…" : "Sign in"}
-</button>
-```
+Fix: commit `42a645b`. The assignments are now wrapped in `useEffect` (`useCardSearch.ts:116-118`, `useDragAndDrop.ts:261-263`). `eslint-fix-report.md` still lists a `react-hooks/exhaustive-deps` warning in `useCardSearch.ts` (report).
 
-The same 7-line Tailwind string was duplicated across login, register, and other pages,
-diverging from `BaseButton`'s `primary` variant — a maintainability risk.
+#### V-003: `next build` failed to prerender
 
-### Fix Applied
-Replaced with `<BaseButton>` from `components/shared/BaseButton.tsx`:
+Area / severity: workflow / High. Found by running the build (report).
 
-```tsx
-// app/login/page.tsx  (corrected)
-import { BaseButton } from "@/components/shared/BaseButton";
-// ...
-<BaseButton type="submit" variant="primary" disabled={isSubmitting}>
-  {isSubmitting ? "Signing in…" : "Sign in"}
-</BaseButton>
-```
+Guideline: `development-workflow.md` §3 Stage 6, `testing.md` §14.2 (build verification), `structure.md` §15.
 
-The same pattern was applied consistently to `app/register/page.tsx` and verified
-already present in `app/profile/page.tsx`.
+The build exited with code 1 because prerendering `/` failed in `context/AuthContext.tsx:64`. This is recorded in the "next build Full Output" section of `eslint-fix-report.md`.
 
----
+Fix: commit `2f2e508` (`frontend/app/page.tsx`, `frontend/app/boards/[id]/page.tsx`, `frontend/next.config.ts`). `app/page.tsx:12` now has `export const dynamic = "force-dynamic"`. `frontend-audit-report.md` records exit 0 afterwards (report, not re-run here).
 
-## Violation 4 — `setState` Called Synchronously Inside `useEffect` (Cascading Renders)
+#### V-004: Analytics counted soft-deleted cards
 
-### File / Location
-`components/board/BoardDetailView.tsx`, `BoardsGrid.tsx`, `MyTasksList.tsx`,
-`CardDetailModal.tsx` (original versions, lines ~131, ~71, ~160, ~242, ~274)
+Area / severity: backend / Low. Found in review (`.agents/tasks/backend-review.md`, Issue 1).
 
-### Rule Violated
-**`frontend.md §6.1` — Local Component State:**
-> "MUST use local React state for temporary component-specific UI state."
+Guideline: `guidelines/database.md` and `architecture.md` on data integrity (`deleted_at` marks deletion). No specific section number applies.
 
-**`frontend.md §9.1` — Error Handling:**
-> "MUST handle expected errors explicitly."
-> "MUST NOT silently swallow exceptions."
+Status: fixed. `backend/app/blueprints/analytics/service.py:36` now filters on `Card.deleted_at == None`. `git log -S` shows the string first appears in `dd8e301`, the same commit that created the blueprint, so there is no separate fix commit.
 
-The React Compiler's `eslint-plugin-react-hooks` `set-state-in-effect` rule (enforced
-by the project's `eslint.config.mjs`) prohibits synchronous `setState` calls inside
-`useEffect` bodies because they cause an unnecessary extra render cycle on every effect
-execution — a performance and correctness violation.
+#### V-005: `BoardColumn` docstring said "integer"
 
-### Code Before Fix
-```tsx
-// components/board/BoardDetailView.tsx (original)
-useEffect(() => {
-  if (isAuthLoading) return;
-  if (!token) {
-    // Synchronous setState in effect body — triggers immediate re-render
-    setState({ status: "error", message: "You must be signed in." });
-    return;
-  }
-  setState({ status: "loading" });  // another synchronous setState
-  async function load() { ... }
-  load().catch(err => setState({ status: "error", message: err.message }));
-}, [token, isAuthLoading, boardId]);
-```
+Area / severity: backend / Low. Found in review (Issue 2).
 
-### Fix Applied
-Moved auth-error derivation to the render path (derived state, no extra `useState`).
-Removed the explicit `setState({ status: "loading" })` — idle state serves as the
-loading indicator. All remaining `setState` calls happen only inside async `.catch()`
-callbacks, which are permitted by the rule:
+Status: fixed. `backend/app/models/board_column.py:44` now reads "Zero-based float ...". The change is part of `dd8e301`.
 
-```tsx
-// components/board/BoardDetailView.tsx (corrected)
-useEffect(() => {
-  if (isAuthLoading || !token) return;
-  async function load() {
-    // ... fetch and setState({ status: "success" })
-  }
-  load().catch(err => setState({ status: "error", message: err.message }));
-}, [token, isAuthLoading, boardId]);
+#### V-006: `timezone` field had no IANA validation
 
-// Render path: derive auth error without useEffect
-if (!isAuthLoading && !token) {
-  return <div role="alert">You must be signed in to view this board.</div>;
-}
-```
+Area / severity: security / Medium. Found in review (Issue 3).
 
-For `CardDetailModal.tsx`, which had two violations, the fix refactored the three
-`useState` variables into a `useReducer` state machine — `dispatch` from `useReducer`
-is not tracked by the `getSetStateCall` IR analysis and may be called synchronously
-in effects.
+Guideline: `security.md` §5 (backend input validation).
 
----
+Status: fixed. `backend/app/blueprints/users/schema.py:10-26` validates against `zoneinfo.available_timezones()`. Part of `dd8e301`.
 
-## Violation 5 — `ref.current` Written During Render Phase
+#### V-007: Duplicate `per_page` cap
 
-### File / Location
-`hooks/useCardSearch.ts` line ~115, `hooks/useDragAndDrop.ts` line ~260 (original versions)
+Area / severity: backend / Low. Found in the Details section of the review, not in its Issues list.
 
-### Rule Violated
-**`frontend.md §6.1` — Local Component State** (by extension, hook authoring rules):
-React's rules require that refs are only mutated inside `useEffect`, event handlers,
-or other non-render callbacks. Writing `ref.current = value` at the top level of a
-hook during the render phase is undefined behaviour under React's concurrent rendering
-model and is flagged by `react-hooks/refs` from `eslint-plugin-react-hooks`.
+Guideline: `development-workflow.md` §3 Stage 5, item 10 (no dead code).
 
-### Code Before Fix
-```ts
-// hooks/useCardSearch.ts
-const filtersRef = useRef<CardSearchFilters>(filters);
-filtersRef.current = filters;  // ← written during render — VIOLATION
+Status: fixed. The cap now lives only in `notifications/routes.py:58`. `notifications/service.py:21` has a comment saying the route enforces it. Part of `dd8e301`.
 
-// hooks/useDragAndDrop.ts
-const columnsRef = useRef<ColumnCardMap>(state.columns);
-columnsRef.current = state.columns;  // ← written during render — VIOLATION
-```
+#### V-008: `BaseButton` had no `destructive` variant, `toast` had no `showLoading`
 
-### Fix Applied
-Moved both assignments into `useEffect`:
+Area / severity: frontend / Low. Found by the audit checklist (`frontend-audit-report.md`, items 2a and 4c). The checklist comes from the task spec, not from a steering rule.
 
-```ts
-// hooks/useCardSearch.ts
-const filtersRef = useRef<CardSearchFilters>(filters);
-useEffect(() => {
-  filtersRef.current = filters;
-}, [filters.query, filters.assignee, filters.dueDateFrom, filters.dueDateTo, filters.label]);
+Status: fixed in `6f260ff`. `components/shared/BaseButton.tsx:5` has the `destructive` variant and `lib/toast.ts:24` exports `showLoading`.
 
-// hooks/useDragAndDrop.ts
-const columnsRef = useRef<ColumnCardMap>(state.columns);
-useEffect(() => {
-  columnsRef.current = state.columns;
-}, [state.columns]);
-```
+### Partially fixed
 
----
+#### V-029: Earlier violation report contained claims that cannot be verified
 
-*Report generated: 2026-11-22. Last updated after final ESLint and build verification.*
+Area / severity: docs / Medium. The sources are the old `docs/reports/guideline-violations.md` and its copy `VIOLATION_REPORT.md` (commit `3852262`, 295 lines each).
+
+Guideline: `structure.md` §4 item 7 and §8 ("Evidence MUST be based on actual generated code, reviews, tests, or repository changes").
+
+The old report listed violations that git history does not support:
+
+- "Business Logic in Route Handler": `backend/app/blueprints/comments/routes.py` has one commit (`1611bb9`) and its diff has no `db.session`. The route today only delegates to the service. The "before" version is not in git.
+- "Wrong Column Type (Integer)": `backend/app/models/card.py` has one commit (`4bd1d4f`) and already uses a Float `order` (`card.py:109`). No Integer-to-Float change is recorded.
+- "Raw `<button>`": `git log -S"<button"` on `frontend/app/login/page.tsx` and `register/page.tsx` returns no commits.
+- It cited section numbers such as `backend.md §3`, `frontend.md §4.8` and `database.md §11`, but `guidelines/*.md` have no numbers. It also cited `database.md` as if it banned floats for ordering, while `guidelines/database.md:44` requires a Float column named `order`. It also mentioned a "rubric".
+
+Status: partial. This document replaces the content of `docs/reports/guideline-violations.md`. `VIOLATION_REPORT.md` in the repo root still holds the old text and was not changed (outside the scope of this task).
+
+The WRONG/CORRECT examples in `guidelines/backend.md` and `guidelines/frontend.md` are illustrations. They are not counted as real violations here because there is no evidence of them in git history.
+
+Recommended: delete `VIOLATION_REPORT.md` or replace it with a pointer to this file. Also check `docs/reports/ai-output-comparison.md`, which was not audited (see section 7).
+
+### Open
+
+#### V-009: Auth endpoints called by the frontend do not exist
+
+Area / severity: api-contract / High.
+
+Guideline: `api-contracts.md` §3.3, §4.3 (`/auth/logout`) and §16.3 (contract consistency). `security.md` §3.3 (sessions must be revocable on logout).
+
+`frontend/context/AuthContext.tsx:75` calls `/api/auth/refresh` and `:133` calls `/api/auth/logout`. `backend/app/blueprints/auth/routes.py` only registers `/register` (line 10) and `/login` (line 58). A `refresh_token` model exists (`backend/app/models/refresh_token.py`) and login issues the token (`auth/service.py`), but no route can use or revoke it.
+
+Impact: a session cannot be restored after the access token expires (15 minutes, `auth/service.py`), and logout does not revoke the refresh token on the server.
+
+Recommended: add refresh (with rotation) and logout routes with tests, or remove the callers.
+
+#### V-010: Refresh token written through `document.cookie`
+
+Area / severity: security / High.
+
+Guideline: `security.md` §3.3 (`HttpOnly`, `Secure`, `SameSite` cookies) and §9.
+
+`frontend/context/AuthContext.tsx:121-124` writes `refresh_token` to a cookie from JavaScript, with a TODO to move it to `Set-Cookie`. The backend returns `refresh_token` in the JSON body (`auth/routes.py:111`) and there is no `set_cookie` anywhere in `backend/app`. Scripts can read the cookie (exposed to XSS) and it has no `Secure` flag.
+
+The access token is kept in memory, not in `localStorage` (comment at `AuthContext.tsx:26`; a grep found no `localStorage` or `sessionStorage` in the frontend).
+
+Recommended: set an HttpOnly cookie from the backend, add CSRF protection per `security.md` §7, and remove the client-side cookie write.
+
+#### V-011: No rate limiting
+
+Area / severity: security / High.
+
+Guideline: `security.md` §3.1 and §11 (login, registration).
+
+A grep for `Limiter|limiter` in `backend/app` returns nothing, and `backend/requirements.txt` does not list Flask-Limiter.
+
+Recommended: rate limit `/api/auth/login` and `/register` using shared storage, not per-process counters (`security.md` §11).
+
+#### V-012: CORS not configured in code
+
+Area / severity: security / Medium.
+
+Guideline: `security.md` §8.
+
+`.env.example:13` and `backend/app/.env.example` define `CORS_ALLOWED_ORIGINS`, but `backend/app` has no CORS code and `requirements.txt` has no flask-cors. The variable is unused.
+
+Limitation: if deployment uses a reverse proxy or a shared origin, CORS may be handled outside this repo. That cannot be checked from here.
+
+#### V-013: Password hashing is not explicitly Argon2id or bcrypt
+
+Area / severity: security / Medium.
+
+Guideline: `security.md` §3.2.
+
+`backend/app/blueprints/auth/service.py:53` calls Werkzeug's `generate_password_hash(password)` with the default method and no explicit settings. I did not run code to check what the default is in the installed version.
+
+Recommended: use Argon2id or bcrypt with documented parameters.
+
+#### V-014: Default secret and DB URL in `DevelopmentConfig`
+
+Area / severity: security / Low.
+
+Guideline: `security.md` §2 item 8 and §19 item 1.
+
+`backend/app/config.py:29` gives `JWT_SECRET_KEY` a literal default (value redacted) and `config.py:25-28` gives a default database URL. `TestingConfig` (`config.py:40`) uses a literal key meant only for tests.
+
+Impact: limited to local development as long as V-031 is fixed. No `.env` file is tracked (`git ls-files` shows only `.env.example`).
+
+#### V-015: Ad-hoc 401 response copied in the auth decorator
+
+Area / severity: backend / Low.
+
+Guideline: `guidelines/backend.md "Typed Exception Hierarchy"` (failures should use `AppException`, not ad-hoc responses).
+
+`backend/app/blueprints/auth/decorators.py` builds the same `jsonify({"error": ...}), 401` block four times, at lines 34-43, 56-65, 69-78 and 85-94. `UnauthorizedError` already exists in `common/exceptions.py:61`.
+
+Recommended: `raise UnauthorizedError()` and let `error_handlers.py` format the response.
+
+#### V-016: Direct `fetch()` in components, hooks and context
+
+Area / severity: frontend / Medium.
+
+Guideline: `guidelines/frontend.md "Centralised API Service Modules"`, `api-contracts.md` §3.3 and §13.1, `architecture.md` §7.1.
+
+Direct `fetch(` calls are at `context/AuthContext.tsx:75,102,133`, `app/profile/page.tsx:28`, `components/board/BoardDetailView.tsx:48,61,81`, `components/board/BoardsGrid.tsx:26`, `components/board/MyTasksList.tsx:46` and `hooks/useCardSearch.ts:70`. The shared client `lib/apiClient.ts` already exists and is used in `app/page.tsx:4`, `app/boards/[id]/page.tsx:4`, `useDragAndDrop.ts:3`, `useNotifications.ts:3` and `CardDetailModal.tsx:5`, so usage is inconsistent.
+
+#### V-017: `NEXT_PUBLIC_API_URL` is not defined
+
+Area / severity: frontend / Medium.
+
+Guideline: `guidelines/frontend.md "Centralised API Service Modules"` (base URL from env) and `structure.md` §9.1.
+
+`NEXT_PUBLIC_API_URL ?? ""` is read in `context/AuthContext.tsx:11`, `app/profile/page.tsx:11`, `BoardDetailView.tsx:45`, `BoardsGrid.tsx:23`, `MyTasksList.tsx:36` and `hooks/useCardSearch.ts:45`. `.env.example` and `frontend/.env.example` only define `NEXT_PUBLIC_API_BASE_URL` and `API_BASE_URL`. When the variable is empty the URL is relative and does not reach Flask. `frontend-audit-report.md` (Notes) records the same problem.
+
+#### V-018: Frontend has no `features/` or `lib/api/`
+
+Area / severity: structure / Medium.
+
+Guideline: `guidelines/frontend.md "Feature Folder Structure"`, `structure.md` §5 and §5.5, `api-contracts.md` §13.1.
+
+`frontend/features`, `frontend/lib/api`, `frontend/providers` and `frontend/tests` do not exist. The code uses `frontend/context/`, `frontend/lib/apiClient.ts` and `frontend/components/board/`, and the routes have no `(auth)/(dashboard)` groups. `restructure-plan.md` says "no structural changes" for the frontend, so this was never addressed.
+
+Recommended: migrate in small steps as `structure.md` §13 describes, not in one move.
+
+#### V-019: Inconsistent API prefix
+
+Area / severity: api-contract / Medium.
+
+Guideline: `api-contracts.md` §3.2 and §15 (`/api/v1`).
+
+`backend/app/__init__.py:87-88` registers `/api/v1/cards` and `/api/v1/columns`, while lines 89-97 use `/api/...`. A comment above line 87 admits this is technical debt. The frontend mixes both: `useDragAndDrop.ts` uses `/api/v1/cards/...` and `MyTasksList.tsx:46` uses `/api/cards`.
+
+#### V-020: JSON naming, pagination meta and error codes
+
+Area / severity: api-contract / Low.
+
+Guideline: `api-contracts.md` §5.2 (camelCase), §6.2 (`meta.pagination.perPage`), §7.2 (`UNAUTHENTICATED`).
+
+`backend/app/blueprints/cards/schema.py:74,80` returns `column_id` and `created_at`. `notifications/routes.py:62` returns `"meta": {"page", "per_page", "total"}`. `common/exceptions.py:65` uses the code `UNAUTHORIZED`.
+
+`guidelines/backend.md "Standard Response Envelope"` shows `meta` with `per_page`, so the project guideline and `api-contracts.md` contradict each other. This needs a decision under `structure.md` §4 item 5.
+
+#### V-021: `common/` is incomplete
+
+Area / severity: structure / Low.
+
+Guideline: `structure.md` §6 and §6.3.
+
+`backend/app/common/` holds only `__init__.py`, `error_handlers.py` and `exceptions.py`. `permissions.py`, `responses.py` and `logging.py` are missing, and so is `utils/`. Ownership checks are spread across the services of each blueprint.
+
+#### V-022: `schema.py` instead of `schemas.py`
+
+Area / severity: structure / Low.
+
+Guideline: `structure.md` §6.1 (file name `schemas.py`).
+
+Every blueprint (`backend/app/blueprints/*/schema.py`) uses `schema.py`.
+
+#### V-023: `backend/app/.env.example` is outside the structure
+
+Area / severity: structure / Low.
+
+Guideline: `structure.md` §2 and §9.1 (one `.env.example` in the root).
+
+`backend/app/.env.example` is tracked, alongside the root `.env.example` and `frontend/.env.example`. It contains only variable names and placeholders.
+
+#### V-024: Backend tests do not follow the standard layout
+
+Area / severity: testing / Medium.
+
+Guideline: `testing.md` §12.1, §6.3, §8, §20, and `structure.md` §6.
+
+`backend/tests/` contains only `conftest.py`, `test_auth_service.py`, `test_cards_service.py` and `test_comments.py`. There is no `unit/`, `integration/`, `api/` or `security/`. HTTP-level 401/403/404 tests exist only in `test_comments.py` (lines 92 and 118). There are no route tests for auth, boards, columns, notifications, analytics or users, and no migration tests. The tests were not re-run for this audit.
+
+#### V-025: Minimal frontend test coverage
+
+Area / severity: testing / Medium.
+
+Guideline: `testing.md` §5.3 and §5.4.
+
+The only tests are `frontend/components/board/__tests__/BoardCard.test.tsx` and `CommentList.test.tsx`. Nothing covers `lib/apiClient.ts`, the hooks or `AuthContext`.
+
+#### V-026: E2E has no Page Objects and no boards/cards specs
+
+Area / severity: testing / Medium.
+
+Guideline: `structure.md` §7 (item 2: Page Objects MUST be used) and `testing.md` §10.
+
+The tracked e2e files are `e2e/fixtures/auth.setup.ts`, `e2e/playwright.config.ts`, `e2e/tests/auth.spec.ts` and `e2e/tests/kanban-journey.spec.ts`. There is no `e2e/pages/`, `boards.spec.ts` or `cards.spec.ts`. `frontend-audit-report.md` (Notes) says the kanban spec refers to UI that is not fully implemented (report, not re-verified). No `waitForTimeout` call was found; the only match is a comment in `kanban-journey.spec.ts:12`.
+
+#### V-027: CI lint command, workflow name and e2e dependencies
+
+Area / severity: workflow / Low.
+
+Guideline: `structure.md` §2 (`e2e-tests.yml`) and `testing.md` §14.2.
+
+- `.github/workflows/frontend-ci.yml:15` runs `npx next lint`, while `frontend/package.json:9` uses `"lint": "eslint"`. `frontend-audit-report.md` and `eslint-fix-report.md` say Next.js 16 no longer provides `next lint` (report, not re-run).
+- The e2e workflow is named `playwright.yml`, not `e2e-tests.yml`.
+- The e2e job runs `npx playwright test` with `working-directory: e2e`, but no `package.json` for `e2e/` is tracked. Whether this works in CI cannot be confirmed without running the workflow.
+
+#### V-028: Duplicate documents
+
+Area / severity: structure / Low.
+
+Guideline: `structure.md` §14 item 6 (avoid duplicates) and §2 (root layout).
+
+`VIOLATION_REPORT.md` in the root is not in the `structure.md` §2 layout and is identical to the old version of this report (commit `3852262`). Both `.kiro/specs/*` and `specs/*` are tracked (`restructure-plan.md` says `specs/` was "copied from .kiro/specs/"). `.kiro/steering/development-workflow..md` has a double dot in its file name. Whether that is intentional is unknown.
+
+#### V-030: Unused imports and misleading comments
+
+Area / severity: frontend / Low.
+
+Guideline: `development-workflow.md` §3 Stage 5 item 10, and Stage 7 ("remove unused imports").
+
+`components/board/MyTasksList.tsx:6` imports `BaseButton`, while the comments at lines 150 and 237 say it is used. `eslint-fix-report.md` lists the unused import (report). `app/page.tsx:1` imports `Suspense`, which is not used in the file (line 1 matched against the lint report). `eslint-fix-report.md` records 11 lint warnings in total (report).
+
+#### V-031: `wsgi.py` uses `DevelopmentConfig`; `ProductionConfig` is unused
+
+Area / severity: security / High.
+
+Guideline: `security.md` §16 ("Disable debug mode in production") and §19, and `development-workflow.md` §6 ("Validate required environment variables at application startup").
+
+`backend/wsgi.py:4` calls `create_app()` with no argument. The default in `create_app` is `app.config.DevelopmentConfig` (`backend/app/__init__.py:15`), which sets `DEBUG = True` (`config.py:24`) and has a default secret (V-014). `ProductionConfig` (`config.py:43`) is not referenced anywhere in `backend/` or `.github/` (grep for `ProductionConfig`), and `ProductionConfig._validate` (`config.py:55`) is never called. The `wsgi.py` docstring says the file is the production entry point (Gunicorn).
+
+Impact: a deployment through `wsgi.py` would run with debug on and without env validation. The README says the app is not deployed yet (commit `b9cf8d1`), so the risk is latent.
+
+Recommended: pick the config from the environment (`FLASK_ENV` or a dedicated variable), call `_validate` at startup and add a test.
+
+## 5. Open violations by priority
+
+| Priority | IDs                                                           | Severity | Summary                                |
+| -------- | ------------------------------------------------------------- | -------- | -------------------------------------- |
+| 1        | V-031                                                         | High     | `wsgi.py` uses `DevelopmentConfig`     |
+| 2        | V-010                                                         | High     | Refresh token in a non-HttpOnly cookie |
+| 3        | V-009                                                         | High     | Refresh and logout endpoints missing   |
+| 4        | V-011                                                         | High     | No rate limiting                       |
+| 5        | V-012, V-013, V-016, V-017, V-018, V-019, V-024, V-025, V-026 | Medium   | See section 4                          |
+| 6        | V-014, V-015, V-020, V-021, V-022, V-023, V-027, V-028, V-030 | Low      | See section 4                          |
+
+22 entries are open (V-009 to V-031 except V-029). V-029 is partially fixed: this document replaces the old report text, but the root `VIOLATION_REPORT.md` has not been replaced.
+
+## 6. Checked, no violation found
+
+- Route handlers contain no SQLAlchemy queries. A grep for `db.session|select(|.query(` in `backend/app/blueprints/*/routes.py` returned nothing, and `comments/routes.py` only validates and calls the service.
+- No `.env` file is tracked, and `.gitignore` excludes `.env*` except `.env.example`.
+- The 500 handler returns a generic message and logs the traceback (`common/error_handlers.py:82-97`).
+- JWT verification uses an algorithm allowlist (`decorators.py:52`, `algorithms=["HS256"]`).
+- The frontend code I read has no `localStorage`, `sessionStorage` or `dangerouslySetInnerHTML`.
+
+## 7. Limitations
+
+- No tests, lint or build were run for this audit. The lint, build and e2e results quoted here come from agent reports and were not re-checked.
+- The "before" code for V-001 to V-008 is not fully available in git. The fixes for V-004 to V-007 went in with the feature commit `dd8e301`, so the only "before" evidence is the review report.
+- The example violations in `guidelines/*.md` (a route with a DB query, a raw `<button>`, `Integer position`) could not be shown to have existed in git, so they are not recorded as violations.
+- Not audited in depth: `docs/reports/ai-output-comparison.md` (its metrics were not verified), `specs/*` (traceability of requirements, design and tasks), `guidelines/database.md` apart from the Float rule, the Alembic migrations, the contents of the tests in `backend/tests/`, and UI components other than the ones cited.
+- Not checked: accessibility, security headers (CSP, HSTS), end-to-end CSRF, and real deployment behavior (CI, hosting, reverse proxy).
+- Some files under `.agents/` are untracked (`restructure-report.md`, `restructure-review.*`, `frontend-audit-plan.md`, `frontend-audit-review.*`). Nothing in them is used as evidence here.
