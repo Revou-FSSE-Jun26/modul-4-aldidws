@@ -6,6 +6,8 @@ export interface Comment {
   body: string;
   /** ISO 8601 timestamp string */
   createdAt: string;
+  /** ISO 8601 timestamp string — set by the server on creation and each edit */
+  updatedAt?: string;
 }
 
 export interface CommentListProps {
@@ -33,7 +35,11 @@ function formatRelativeTime(isoString: string): string {
 
 function CommentItem({ comment }: { comment: Comment }) {
   return (
-    <li className="flex flex-col gap-0.5">
+    <li
+      className="flex flex-col gap-0.5"
+      data-testid="comment-item"
+      data-updated-at={comment.updatedAt ?? comment.createdAt}
+    >
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs font-semibold text-foreground">
           {comment.authorName}
