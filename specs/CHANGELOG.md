@@ -9,6 +9,10 @@ This changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+### Changed
+
+- Specifications rewritten for the Kanban product (see Refinement 1, 2026-11-24). Documentation only.
+
 ---
 
 ## AI Improvement Log
@@ -265,6 +269,101 @@ import { BaseButton } from "@/components/shared/BaseButton";
   {isSubmitting ? "Signing in…" : "Sign in"}
 </BaseButton>;
 ```
+
+---
+
+## Specification Refinement Log
+
+Each entry records a change to the specifications in `specs/`: **Context -> Before -> After -> Evidence**.
+
+---
+
+### Refinement 1: Task/Project specification replaced by a Kanban specification (2026-11-24)
+
+**Context / Problem:**
+The specifications described a Task and Project application (tasks with status, priority and due date, overdue and due-today filters, four sorting modes, an activity log). The code that was built is a Kanban application: boards, columns, cards with a Float `order` and a `deleted_at` column, comments, notifications, analytics and a user profile. The gap analysis in `.agents/tasks/requirements-gap-report.md` (section 1, point 4) found that old Requirements 2 to 9 and 12 had no counterpart in the code, and that Kanban, drag and drop, comments and notifications appeared only under "Future Enhancements" (old requirements section 10), with analytics listed as out of scope (old section 9). The same report found that a logged-in user could not complete the Kanban flow through the UI and that several frontend payloads were rejected by the backend (section 4). The product owner chose Kanban (Q1 in section 7 of the report). Mapping: Task became Card, Project became Board.
+
+**Before (`specs/*.md` in the working tree at commit `339dfe3`, counted before the rewrite):**
+
+| File | Lines | Content |
+|---|---:|---|
+| `requirements.md` | 444 | 12 requirements, 107 acceptance criteria: Task create, view, edit, delete, status and priority, Project organization, filter and search, sorting, persistence, API, activity tracking. Admin role. Render as backend host. |
+| `design.md` | 698 | Task-based components and data models, 19 correctness properties (for example "Project deletion unassigns tasks atomically", "Overdue filter correctness"). |
+| `tasks.md` | 390 | 42 top-level tasks for the Task/Project app. |
+
+Examples of statements that did not match the code:
+
+- Requirement 7.9 and Property 14: deleting a project sets its tasks' `project_id` to null. Cards have no `project_id` and belong to a column.
+- Requirement 5.2: a task is permanently deleted. The `cards` table has `deleted_at`.
+- Requirement 11.1: every route under `/api/v1`. Only the cards routes are.
+- Section 7: hosting on Render. The deployment documents describe Railway.
+
+**After (this refinement):**
+
+| File | Lines | Content |
+|---|---:|---|
+| `requirements.md` | 395 | 14 requirements (R1 to R14) with 101 numbered acceptance criteria, plus 26 numbered non-functional criteria (N1 to N6). Each criterion is tagged `[Done]` (42), `[BE]` (23) or `[Plan]` (62). Section 12 lists 13 open decisions (D1 to D13). |
+| `design.md` | 486 | System overview, data model as implemented, a table of 25 routes with real field names, the extra URLs created by double blueprint registration, frontend pages and components with their status, data flows (board read, create, move, delete, session), contract mismatches with the chosen resolution, error handling and validation tables, an invariant ownership table, security notes, and traceability tables from every criterion to routes, pages and tests. |
+| `tasks.md` | 295 | 36 tasks (T0, B1 to B12, F1 to F13, C1, E1, X1, P1 to P7) with size, dependencies, requirement references and tests, and a coverage table for every route and page. |
+
+Counts for "After" were taken from the files after the rewrite. Counts for "Before" were taken from the files before it.
+
+**Old requirement to new requirement:**
+
+| Old | New |
+|---|---|
+| R1 Authentication | R1, R9 (session limits) |
+| R2, R4, R5 Create, edit, delete Task | R4 Cards |
+| R3 View Tasks | R2.3, R2.5 (board list and board read) |
+| R6 Status and priority | Removed. The column is the status (D9). |
+| R7 Projects | R2 Boards, R3 Columns |
+| R8 Filter and search | R8 Search (title and description, one board) |
+| R9 Sorting | Removed (D9) |
+| R10 Persistence | R12 |
+| R11 API and errors | R10 |
+| R12 Activity tracking | Removed (D12) |
+| none | R5 Move and reorder, R6 Comments, R7 Profile, R11 Authorization, R13 Analytics, R14 Notifications |
+
+**Evidence used:**
+
+- Gap analysis: `.agents/tasks/requirements-gap-report.md` (sections 2, 4, 7).
+- Code read for the rewrite: `backend/app/__init__.py`, every `blueprints/*/routes.py`, `schema.py` and `service.py`, `backend/app/models/*.py`, `common/error_handlers.py`, `common/exceptions.py`, `config.py`, `backend/migrations/versions`, `frontend/app`, `frontend/components`, `frontend/hooks`, `frontend/lib`, `frontend/context`, `e2e/`.
+- Verified in code while writing, and different from what the gap report or the decisions assumed:
+  - `delete_card` removes the row (`db.session.delete`). The gap report called card deletion a soft delete. Only the `deleted_at` column exists. D7 is therefore a change (task B3).
+  - Board, column and card deletion rely on database cascade, which is a hard delete (D1).
+  - `move_card` renumbers `order` to whole numbers after every move, so the client must reload the board after a move (R5.9) and the backend must break ties in favour of the moved card (R5.10).
+  - `move_card` checks ownership of the destination column but not that it is on the same board (R5.3).
+  - Comment edit and delete return 403 for a non-author and do not check board ownership (R6.5).
+  - Every route calls `uuid.UUID(path_value)`, so an invalid id appears to produce a 500 (R10.11). Read from the code, not executed.
+  - The cards, columns and comments blueprints are each registered at two prefixes, which creates extra URLs (design section 5.3).
+  - The login response includes a `refresh_token` that no route accepts (R9.5).
+  - The model has no priority, status, due date, label or assignee column (D8, D9).
+  - `e2e/fixtures/auth.setup.ts` saves browser storage state, which cannot carry an in-memory token, so authenticated e2e tests need a login fixture (task E1).
+
+**Open decisions recorded (defaults chosen, awaiting confirmation):**
+
+| ID | Default |
+|---|---|
+| D1 | Deleting a board deletes its columns and cards, with confirmation. Whether that is soft or hard is still open because the code hard-deletes. |
+| D2 | One board read returns columns and cards. |
+| D3 | Deleting a column with cards returns 409. |
+| D4 | Token in memory. A reload requires login. Refresh and logout planned, not MVP. |
+| D5 | Name and timezone editable. Email read-only. |
+| D6 | Notifications out of MVP scope. |
+| D7 | Card delete is a soft delete (a change from current code). |
+| D8 | My Tasks and assignee out of scope. |
+| D9 | Search on title and description within one board. No priority, status, due date, labels. |
+| D10 | Target prefix `/api/v1`. Current split documented. |
+| D11 | Analytics backend only. Comments in scope. |
+| D12 | Activity log out of scope. |
+| D13 | Search runs in the browser (added by this refinement). |
+
+**Scope and limits of this change:**
+
+- Documentation only. No application code was changed, and nothing was committed, pushed or deployed.
+- No tests, build or server were run. Statements about behaviour come from reading the code.
+- `.kiro/specs/` holds an older duplicate spec set (V-028). It was not edited. `specs/` is the authoritative copy.
+- `docs/reports/guideline-violations.md` was not changed. Candidate new entries are listed in task X1.
 
 ---
 

@@ -1,698 +1,486 @@
-# Design Document — Task Management Application
+# Design Document: RevoTask (Kanban)
 
-## Overview
+Authoritative copy. `.kiro/specs/` holds an older duplicate set (V-028) and is not maintained.
 
-The Task Management Application is a full-stack web application that lets authenticated users create, organize, prioritize, and track tasks grouped into projects. The MVP delivers a private per-user workspace with no sharing between accounts.
+## 1. Overview
 
-The system is split into a **Next.js / React** frontend served from Vercel and a **Flask / SQLAlchemy** REST API backend hosted on Render, backed by **PostgreSQL**. Authentication is JWT-based. All business rules and authorization are enforced on the backend.
+RevoTask is a modular monolith with two separately deployed applications. A Next.js frontend on Vercel calls a Flask REST API on Railway directly from the browser. The API stores data in PostgreSQL through SQLAlchemy. Authentication is a Bearer JWT. Every resource belongs to one user through its board, and every backend service checks that ownership.
 
-The application supports three user roles: **Guest** (unauthenticated visitor), **Member** (authenticated user with personal task management permissions), and **Admin** (administrative user with account management capabilities). The `role` field on the `User` model drives role-based access control. The MVP implements the Guest and Member roles fully; the Admin interface is scaffolded but limited in scope.
+This design describes the code at commit `339dfe3` and the changes needed to meet `specs/requirements.md`. Each route, field and page is either read from the code ("Current") or marked "Planned". The design was written by reading the code. No server, test or build was run for it.
 
-### Key Design Goals
+Key decisions, with the alternative that was rejected:
 
-- **Data ownership isolation** — every backend query filters by the authenticated user's ID; no cross-user data leakage is possible at the query layer.
-- **Validation at the boundary** — all incoming data is validated before any business logic runs, returning structured JSON errors on failure.
-- **Transactional integrity** — multi-record operations (project deletion + task unassignment) execute inside a single database transaction.
-- **Deterministic pagination and sorting** — a stable sort key chain ensures consistent page results (see Sorting Implementation).
-- **Secure by default** — HTTPS everywhere, JWT expiration and revocation, password hashing with PBKDF2-SHA256, secrets in environment variables, CSRF mitigation.
-- **Observability** — structured JSON logs with per-request IDs, health-check endpoint, error reporting that never leaks internals.
-- **Maintainability** — the backend follows a layered architecture (routes → services → models); the frontend uses reusable components.
-- **Future-ready ordering** — the `Task.order` column is present in the schema now to support drag-and-drop reordering (a planned future enhancement).
+- **Board read.** `GET /api/boards/{id}` returns board, columns and cards in one response (D2). Rejected: two separate list endpoints, which cost one request per column and need new routes and tests for each.
+- **Search.** Runs in the browser over the loaded board (D13). Rejected: a backend search route. The board payload already contains every card, and the MVP has no pagination.
+- **Move.** The client sends `{column_id, order}` and then reloads the board. Rejected: trusting local `order` values, because the backend renumbers orders after each move (section 7.3).
+- **Header.** Rendered once in the root layout when a token exists. Rejected: moving pages into `(auth)` and `(dashboard)` route groups, which is a structural migration unrelated to the product work (`structure.md` section 13).
+- **Prefix.** Target `/api/v1` for all routes (D10), done as one task (P1) with a temporary dual registration.
 
----
+## 2. Technology stack (locked)
 
-## Architecture
+| Layer          | Technology                                                                                                | Source                          |
+| -------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Frontend       | Next.js 16.4.6, React 19.3.0, TypeScript 5, Tailwind CSS 4.3.3, react-hot-toast                           | `frontend/package.json`         |
+| Frontend tests | Jest 30, Testing Library, Playwright 1.65                                                                 | `frontend/package.json`, `e2e/` |
+| Backend        | Flask 3.1, Marshmallow 4.4, SQLAlchemy 2.1, Flask-Migrate, PyJWT 2.15, flask-cors 6.0, flasgger, gunicorn | `backend/requirements.txt`      |
+| Database       | PostgreSQL                                                                                                | `backend/app/config.py`         |
+| Backend tests  | Pytest                                                                                                    | `backend/tests/`                |
+| Hosting        | Vercel (frontend), Railway (backend + Postgres)                                                           | `docs/deployment-*.md`          |
 
-The application uses a **client–server architecture** with a clear API boundary.
+No new runtime dependency is introduced by this design, except a shared store for rate limiting (task P3), which needs its own decision before work starts.
 
-```mermaid
-graph TD
-    subgraph Client ["Browser (Vercel)"]
-        UI["Next.js / React UI"]
-    end
-
-    subgraph API ["Backend (Render)"]
-        Routes["Flask Routes /api/v1 + /api/auth"]
-        Services["Service Layer"]
-        Models["SQLAlchemy Models"]
-        Auth["JWT Auth Middleware"]
-        Logging["Structured JSON Logger\n(request-id injection)"]
-    end
-
-    subgraph DB ["Database (Render)"]
-        PG["PostgreSQL"]
-    end
-
-    UI -->|HTTPS REST| Routes
-    Routes --> Auth
-    Auth --> Services
-    Services --> Models
-    Models --> PG
-    Routes --> Logging
-```
-
-### Request Lifecycle
-
-1. The browser sends an HTTPS request with a `Bearer` JWT in the `Authorization` header.
-2. Flask auth middleware validates the token and attaches `current_user` to `flask.g`. Missing or invalid tokens return `401` immediately.
-3. A route handler deserializes and validates the request body / query parameters.
-4. The service layer executes the business operation using SQLAlchemy, always scoping queries to `current_user.id`.
-5. The route handler serializes the result and returns a JSON response with the appropriate HTTP status code.
-6. All writes are committed in a transaction before the success response is sent.
-7. The structured logger records every request with a unique `X-Request-ID` header value; errors are logged with full context but without secrets or stack traces in the response body.
-
-### Deployment Topology
+## 3. Architecture
 
 ```mermaid
-graph LR
-    Vercel["Vercel CDN\n(Next.js SSR + Static)"]
-    Render["Render Web Service\n(Flask + Gunicorn)"]
-    RenderDB["Render PostgreSQL\n(automated backups enabled)"]
-
-    Vercel -->|/api/*| Render
-    Render --- RenderDB
+flowchart LR
+    U[Browser] --> FE[Next.js on Vercel]
+    FE -->|HTTPS JSON, Bearer token| API[Flask on Railway]
+    API --> BP[Blueprint routes]
+    BP --> SCH[Marshmallow schemas]
+    BP --> SVC[Services]
+    SVC --> ORM[SQLAlchemy]
+    ORM --> DB[(PostgreSQL)]
 ```
 
-Automated PostgreSQL backups are enabled on the Render database instance. Backup restoration procedures are tested separately per the reliability requirements.
+The browser calls the Railway origin directly. There are no Vercel rewrites. The backend allows only the origins in `CORS_ALLOWED_ORIGINS`.
 
----
+Request path in the backend: route handler (decorator `token_required` loads the user) -> Marshmallow `load` -> service function (ownership check, rules, commit) -> serializer function (`*_to_dict`) -> JSON envelope. Errors are `AppException` subclasses or Marshmallow `ValidationError`, converted in `app/common/error_handlers.py`.
 
-## Components and Interfaces
+Services do not touch Flask request or response objects. Routes do not run queries. This holds in the current code.
 
-### Backend Components
+## 4. Data model (as implemented)
 
-```mermaid
-graph TD
-    A["app/__init__.py\nFlask app factory"] --> B["routes/auth.py\n/api/auth/*"]
-    A --> C["routes/tasks.py\n/api/v1/tasks"]
-    A --> D["routes/projects.py\n/api/v1/projects"]
-    A --> E["routes/activity.py\n/api/v1/activity"]
-    A --> HL["routes/health.py\n/api/v1/health"]
-    B --> F["services/auth_service.py"]
-    C --> G["services/task_service.py"]
-    D --> H["services/project_service.py"]
-    E --> I["services/activity_service.py"]
-    F --> J["models/user.py"]
-    G --> K["models/task.py"]
-    H --> L["models/project.py"]
-    I --> M["models/activity.py"]
-    J & K & L & M --> N["db (SQLAlchemy)"]
-    A --> MW["middleware/auth.py\nrequire_auth decorator"]
-    A --> LOG["middleware/logging.py\nrequest-id injection"]
-```
-
-#### REST API Surface
-
-Authentication routes use the prefix `/api/auth`. All other routes are prefixed with `/api/v1`. Every response body uses the envelope:
-
-```json
-{ "data": <payload>, "error": null }
-// or
-{ "data": null, "error": { "code": "VALIDATION_ERROR", "message": "...", "details": {} } }
-```
-
-| Method   | Path                    | Auth required | Description                                                           |
-| -------- | ----------------------- | ------------- | --------------------------------------------------------------------- |
-| `POST`   | `/api/auth/register`    | No            | Create account                                                        |
-| `POST`   | `/api/auth/login`       | No            | Obtain JWT pair (access + refresh)                                    |
-| `POST`   | `/api/auth/logout`      | Yes           | Revoke refresh token                                                  |
-| `POST`   | `/api/auth/refresh`     | No            | Exchange refresh token for new access token                           |
-| `GET`    | `/api/v1/health`        | No            | Application and database connectivity check                           |
-| `GET`    | `/api/v1/tasks`         | Yes           | List tasks (filter, sort, search, paginate)                           |
-| `POST`   | `/api/v1/tasks`         | Yes           | Create task                                                           |
-| `GET`    | `/api/v1/tasks/:id`     | Yes           | Get task                                                              |
-| `PATCH`  | `/api/v1/tasks/:id`     | Yes           | Update task                                                           |
-| `DELETE` | `/api/v1/tasks/:id`     | Yes           | Delete task                                                           |
-| `PATCH`  | `/api/v1/tasks/reorder` | Yes           | Bulk-update task order positions (body: array of `{id, order}` pairs) |
-| `GET`    | `/api/v1/projects`      | Yes           | List projects                                                         |
-| `POST`   | `/api/v1/projects`      | Yes           | Create project                                                        |
-| `GET`    | `/api/v1/projects/:id`  | Yes           | Get project with its tasks                                            |
-| `PATCH`  | `/api/v1/projects/:id`  | Yes           | Update project                                                        |
-| `DELETE` | `/api/v1/projects/:id`  | Yes           | Delete project (unassigns tasks)                                      |
-| `GET`    | `/api/v1/activity`      | Yes           | List activity log for current user                                    |
-
-#### Query Parameters — `GET /api/v1/tasks`
-
-| Parameter    | Type                                    | Description                                   |
-| ------------ | --------------------------------------- | --------------------------------------------- |
-| `status`     | `todo\|in_progress\|done`               | Filter by status                              |
-| `priority`   | `low\|medium\|high`                     | Filter by priority                            |
-| `project_id` | UUID                                    | Filter by project                             |
-| `overdue`    | boolean                                 | Tasks past due date and not done              |
-| `due_today`  | boolean                                 | Tasks due today (user's timezone)             |
-| `q`          | string (1–100 chars)                    | Search title + description (case-insensitive) |
-| `sort`       | `due_date\|priority\|created_at\|title` | Sort field                                    |
-| `order`      | `asc\|desc`                             | Sort direction                                |
-| `page`       | integer ≥ 1                             | Page number                                   |
-| `per_page`   | integer 1–100                           | Page size                                     |
-
-#### Security Middleware
-
-**JWT authentication** (`middleware/auth.py`):
-
-- `require_auth` decorator validates the `Bearer` token on every protected endpoint.
-- Access token TTL: 15 minutes. Refresh token TTL: 7 days.
-- Refresh tokens are stored server-side in a `refresh_tokens` table and can be revoked on logout.
-- Expired, missing, or tampered tokens return `401 Unauthorized`.
-
-**CSRF mitigation**:
-
-- The API is stateless (Bearer token in header, not cookies), which eliminates the classic CSRF attack surface for the API endpoints.
-- The refresh token is stored in an `httpOnly`, `SameSite=Strict` cookie on the frontend, providing cookie-level CSRF resistance.
-
-**Structured logging** (`middleware/logging.py`):
-
-- Generates a `X-Request-ID` UUID per request (or echoes the client-supplied header).
-- Logs method, path, status code, duration, and request ID as JSON.
-- Never logs passwords, tokens, or personal data fields.
-
-**Health check** (`GET /api/v1/health`):
-
-- Returns `200` with `{ "status": "ok", "db": "ok" }` when the application and database are reachable.
-- Returns `503` if the database connection fails.
-
-### Frontend Components
-
-```mermaid
-graph TD
-    App["app/providers.tsx\n(AuthProvider, QueryClient)"]
-    App --> AuthPages["app/auth/\nlogin, register"]
-    App --> Dashboard["app/dashboard/\ntask list, filters"]
-    App --> ProjectPage["app/projects/[id]/page.tsx"]
-    App --> TaskModal["components/TaskModal\n(create / edit form)"]
-    App --> TaskCard["components/TaskCard"]
-    App --> FilterBar["components/FilterBar"]
-    App --> SortSelector["components/SortSelector"]
-    App --> ProjectSidebar["components/ProjectSidebar"]
-    App --> ConfirmDialog["components/ConfirmDialog"]
-    App --> StatusBadge["components/StatusBadge"]
-    App --> PriorityBadge["components/PriorityBadge"]
-    App --> Pagination["components/Pagination"]
-```
-
-#### State Management
-
-- **Server state** — React Query (`@tanstack/react-query`) for all API data, caching, and background refresh.
-- **UI state** — React `useState` / `useReducer` for modals, form state, and ephemeral UI.
-- **Auth state** — React Context (`AuthContext`) in `app/providers.tsx` storing decoded JWT claims and exposing `login` / `logout` helpers. The access token is held in memory only (never `localStorage`); the refresh token is in an `httpOnly` cookie.
-
-#### Form Handling
-
-- `react-hook-form` with Zod schemas mirroring backend validation rules.
-- Validation runs client-side on submit; server errors from `400` responses are merged into the form state so unsaved data is preserved on failure (Requirement 11.12).
-
-#### Route Protection
-
-- `frontend/middleware.ts` redirects unauthenticated users to `/auth/login` for all protected routes.
-- On `401` from any API call, the client attempts a silent token refresh via `POST /api/auth/refresh`; if that fails it clears auth state and redirects to `/auth/login`.
-
----
-
-## Data Models
-
-### Entity Relationship Diagram
+Source: `backend/app/models/*.py` and migration `e75e73442f21` (the only migration, creates all tables).
 
 ```mermaid
 erDiagram
-    USER {
-        uuid id PK
-        string email UK
-        string password_hash
-        string timezone
-        string role
-        timestamp created_at
-        timestamp updated_at
-    }
-    REFRESH_TOKEN {
-        uuid id PK
-        uuid user_id FK
-        string token_hash UK
-        timestamp expires_at
-        timestamp created_at
-        boolean revoked
-    }
-    PROJECT {
-        uuid id PK
-        uuid user_id FK
-        string name
-        timestamp created_at
-        timestamp updated_at
-    }
-    TASK {
-        uuid id PK
-        uuid user_id FK
-        uuid project_id FK "nullable"
-        string title
-        text description "nullable"
-        string status
-        string priority
-        date due_date "nullable"
-        int order "not null"
-        timestamp created_at
-        timestamp updated_at
-    }
-    ACTIVITY {
-        uuid id PK
-        uuid user_id FK
-        uuid task_id FK "nullable"
-        string event_type
-        jsonb payload
-        timestamp created_at
-    }
-
-    USER ||--o{ PROJECT : owns
-    USER ||--o{ TASK : owns
-    USER ||--o{ ACTIVITY : performs
-    USER ||--o{ REFRESH_TOKEN : has
-    PROJECT ||--o{ TASK : contains
-    TASK ||--o{ ACTIVITY : generates
+    users ||--o{ boards : owns
+    boards ||--o{ board_columns : contains
+    board_columns ||--o{ cards : contains
+    cards ||--o{ card_comments : has
+    users ||--o{ card_comments : writes
+    users ||--o{ cards : "owner_id"
+    users ||--o{ notifications : receives
+    users ||--o{ refresh_tokens : holds
 ```
 
-### SQLAlchemy Model Descriptions
+| Table            | Columns                                                                                                                                                                                                                       | Constraints and indexes                                               |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `users`          | `id` UUID PK, `email` String(254), `password_hash` String(255), `name` String(255) null, `timezone` String(64) default `UTC`, `role` String(16) default `member`, `is_active` bool default true, `created_at`, `updated_at`   | unique index `ix_users_email`; check `role IN ('member','admin')`     |
+| `boards`         | `id` UUID PK, `owner_id` FK `users.id` ON DELETE CASCADE, `name` String(100), `created_at`, `updated_at`                                                                                                                      | index on `owner_id`. No unique index on name (Planned, R12.5)         |
+| `board_columns`  | `id` UUID PK, `board_id` FK `boards.id` ON DELETE CASCADE, `name` String(100), `position` **Float**, `created_at`, `updated_at`                                                                                               | check `position >= 0`; index `(board_id, position)`                   |
+| `cards`          | `id` UUID PK, `column_id` FK `board_columns.id` ON DELETE CASCADE, `owner_id` FK `users.id` ON DELETE CASCADE, `title` String(255), `description` Text null, `order` **Float**, `created_at`, `updated_at`, `deleted_at` null | check `"order" >= 0`; index `(column_id, order)`; index on `owner_id` |
+| `card_comments`  | `id` UUID PK, `card_id` FK `cards.id` ON DELETE CASCADE, `author_id` FK `users.id` ON DELETE CASCADE, `body` Text, `created_at`, `updated_at`                                                                                 | indexes on `card_id`, `author_id`                                     |
+| `notifications`  | `id` UUID PK, `user_id` FK `users.id` ON DELETE CASCADE, `title` String(255), `body` Text null, `is_read` bool default false, `created_at`, `updated_at`                                                                      | index on `user_id`                                                    |
+| `refresh_tokens` | `id` UUID PK, `user_id` FK ON DELETE CASCADE, `token_hash` String(255) unique, `expires_at`, `revoked` bool, `created_at`                                                                                                     | index `ix_refresh_tokens_user_id`                                     |
 
-#### `User`
+Facts that matter for the design:
 
-| Column          | Type                | Constraints                                             |
-| --------------- | ------------------- | ------------------------------------------------------- |
-| `id`            | `UUID`              | PK, default `gen_random_uuid()`                         |
-| `email`         | `String(254)`       | unique, not null, indexed                               |
-| `password_hash` | `String(255)`       | not null                                                |
-| `timezone`      | `String(64)`        | not null, default `'UTC'`                               |
-| `role`          | `String(16)`        | not null, default `'member'`; values: `member`, `admin` |
-| `created_at`    | `DateTime(tz=True)` | not null, server default `now()`                        |
-| `updated_at`    | `DateTime(tz=True)` | not null, `onupdate` trigger                            |
+- `board_columns.position` is a Float in the model, but the column schema accepts an Integer and the service renumbers to 0, 1, 2. Column order is effectively an integer.
+- `cards.order` is a Float. The service renumbers it to whole numbers after every move and after the card is created at the end (section 7.3).
+- `cards.deleted_at` exists, but `delete_card` calls `db.session.delete`, which removes the row. Only `analytics/service.py` filters on `deleted_at`. Planned: soft delete (D7, task B3).
+- Deleting a board, column or card removes children by database cascade (`passive_deletes=True` on the relationships). This is a hard delete.
+- Cards have no priority, status, due date, label or assignee column.
+- `cards.owner_id` duplicates the board owner. Authorization uses the board join, not `cards.owner_id`.
+- Timestamps are `timestamptz`, serialized with `isoformat()`.
 
-**Password hashing**: `werkzeug.security.generate_password_hash` (PBKDF2-SHA256) for hashing; `werkzeug.security.check_password_hash` for verification. This satisfies the security NFR requirement for a secure hashing algorithm (the NFR lists "such as Argon2id" as an example; PBKDF2-SHA256 via Werkzeug is the chosen implementation).
+## 5. API
 
-**Role enforcement**: The `role` column drives authorization checks in the service layer. The `require_auth` decorator validates authentication; role-specific guards (e.g., `require_role('admin')`) are applied to Admin-only endpoints.
+### 5.1 Conventions
 
-#### `RefreshToken`
+| Topic                  | Current behaviour                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base                   | Browser uses `NEXT_PUBLIC_API_BASE_URL` (origin only) plus the path, for example `https://<railway-host>/api/boards`. `frontend/next.config.ts` rejects a value with a path on Vercel.                                                                                                                                                                                                                                                                                                                  |
+| Prefix                 | Split. `/api/v1/...` for cards. `/api/...` for everything else. Target `/api/v1` for all (D10, task P1). `api-contracts.md` section 3.2 shows a base URL that includes `/api/v1`. This repository's `.env.example` holds the origin only. When P1 lands, the frontend path constants carry `/api/v1` and the variable stays an origin.                                                                                                                                                                  |
+| Auth                   | `Authorization: Bearer <access_token>`. HS256 JWT with `sub`, `role`, `exp` (15 minutes). `token_required` loads the user, then passes it as the first argument. A missing header, bad token, expired token or unknown user returns 401 `UNAUTHORIZED`.                                                                                                                                                                                                                                                 |
+| Success                | `{"data": <object or list>}`. Delete returns 204 with an empty body.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Error                  | `{"error": {"code", "message", "details"}}`. `details` is `null` or a field map for validation.                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Field names            | `snake_case`. `api-contracts.md` section 5.2 asks for `camelCase`. Drift recorded as V-020 and not changed here.                                                                                                                                                                                                                                                                                                                                                                                        |
+| Timestamps             | ISO 8601 from `isoformat()`. The `timestamptz` columns return an offset. `api-contracts.md` asks for `Z` suffix. Not changed.                                                                                                                                                                                                                                                                                                                                                                           |
+| Unknown request fields | Rejected with 400 (Marshmallow default).                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Pagination             | Notifications only: `page`, `per_page` (max 100), `meta {page, per_page, total}`. `api-contracts.md` asks for `perPage` and `meta.pagination`. V-020.                                                                                                                                                                                                                                                                                                                                                   |
+| Error codes in use     | `VALIDATION_ERROR` 400, `UNAUTHORIZED` 401, `INVALID_CREDENTIALS` 401, `BOARD_NOT_FOUND` / `COLUMN_NOT_FOUND` / `CARD_NOT_FOUND` / `COMMENT_NOT_FOUND` / `NOTIFICATION_NOT_FOUND` / `USER_NOT_FOUND` 404, `COMMENT_ACCESS_DENIED` 403, `RESOURCE_CONFLICT` 409, `HTTP_ERROR` (any framework HTTP error, for example 404 unknown URL, 405, 415), `INTERNAL_ERROR` 500. `api-contracts.md` section 7.2 names `UNAUTHENTICATED`, `RESOURCE_NOT_FOUND`, `DUPLICATE_RESOURCE`, `RATE_LIMIT_EXCEEDED`. V-020. |
 
-| Column       | Type                | Constraints                                  |
-| ------------ | ------------------- | -------------------------------------------- |
-| `id`         | `UUID`              | PK                                           |
-| `user_id`    | `UUID`              | FK → `users.id`, not null, indexed           |
-| `token_hash` | `String(255)`       | unique, not null — SHA-256 hash of raw token |
-| `expires_at` | `DateTime(tz=True)` | not null                                     |
-| `revoked`    | `Boolean`           | not null, default `False`                    |
-| `created_at` | `DateTime(tz=True)` | not null                                     |
+### 5.2 Route table (canonical routes)
 
-The raw refresh token (a securely generated random string) is returned to the client once and never stored. Only its SHA-256 hash is persisted. Logout sets `revoked = True`; the refresh endpoint rejects revoked or expired tokens.
+All routes except register, login and health require the Bearer token. "Err" lists the error codes a client must handle in addition to 401 and 500.
 
-#### `Project`
+| #   | Method | Path (current)                             | Request fields                                                                                                                      | Success                                                               | Err                                             | Status                  |
+| --- | ------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------- | ----------------------- |
+| 1   | POST   | `/api/auth/register`                       | `name` string 1..255 (trimmed), `email` email, `password` string 8+ with lower, upper, digit                                        | 201 user                                                              | 400, 409 `RESOURCE_CONFLICT`                    | Done                    |
+| 2   | POST   | `/api/auth/login`                          | `email`, `password` (same policy as register, see R1.7)                                                                             | 200 `{access_token, refresh_token, user{id,email,role,timezone}}`     | 400, 401 `INVALID_CREDENTIALS`                  | Done                    |
+| 3   | GET    | `/api/health` (public)                     | none                                                                                                                                | 200 `{status, db}`                                                    | none                                            | Done                    |
+| 4   | POST   | `/api/boards`                              | `name` 1..100 (trimmed, not blank)                                                                                                  | 201 board                                                             | 400, 409                                        | Backend                 |
+| 5   | GET    | `/api/boards`                              | none                                                                                                                                | 200 `[board]` oldest first                                            | none                                            | Done                    |
+| 6   | GET    | `/api/boards/{board_id}`                   | none                                                                                                                                | 200 board (Current). 200 board with `columns[].cards[]` (Planned, D2) | 404 `BOARD_NOT_FOUND`                           | Planned change          |
+| 7   | PATCH  | `/api/boards/{board_id}`                   | `name` 1..100 optional                                                                                                              | 200 board                                                             | 400, 404, 409                                   | Backend                 |
+| 8   | DELETE | `/api/boards/{board_id}`                   | none                                                                                                                                | 204                                                                   | 404                                             | Backend                 |
+| 9   | POST   | `/api/boards/{board_id}/columns`           | `name` 1..100, `position` int >= 0 optional                                                                                         | 201 column                                                            | 400, 404                                        | Backend                 |
+| 10  | PATCH  | `/api/columns/{column_id}`                 | `name` 1..100, `position` int >= 0, both optional                                                                                   | 200 column                                                            | 400, 404 `COLUMN_NOT_FOUND`                     | Backend                 |
+| 11  | DELETE | `/api/columns/{column_id}`                 | none                                                                                                                                | 204. Planned: 409 while the column has cards (D3)                     | 404                                             | Backend, change planned |
+| 12  | PATCH  | `/api/boards/{board_id}/columns/reorder`   | `ordered_ids` list of UUID, 1+ items                                                                                                | 200 `[column]` ordered                                                | 400, 404                                        | Backend                 |
+| 13  | POST   | `/api/v1/columns/{column_id}/cards`        | `title` 1..255 (trimmed, not blank), `description` 0..2000 default `""`, `priority` low/medium/high (accepted and ignored)          | 201 card                                                              | 400, 404 `COLUMN_NOT_FOUND`                     | Backend                 |
+| 14  | PATCH  | `/api/v1/cards/{card_id}`                  | `title`, `description`, `priority`, `status` (todo/in_progress/done) all optional. `priority` and `status` are accepted and ignored | 200 card                                                              | 400, 404 `CARD_NOT_FOUND`                       | Backend                 |
+| 15  | DELETE | `/api/v1/cards/{card_id}`                  | none                                                                                                                                | 204. Current: row removed. Planned: `deleted_at` set (D7)             | 404                                             | Backend, change planned |
+| 16  | PATCH  | `/api/v1/cards/{card_id}/position`         | `column_id` UUID, `order` float >= 0 (both required)                                                                                | 200 card                                                              | 400, 404 `CARD_NOT_FOUND` or `COLUMN_NOT_FOUND` | Backend                 |
+| 17  | GET    | `/api/cards/{card_id}/comments`            | none                                                                                                                                | 200 `[comment]` oldest first                                          | 404                                             | Backend                 |
+| 18  | POST   | `/api/cards/{card_id}/comments`            | `body` 1..2000 (trimmed, not blank)                                                                                                 | 201 comment                                                           | 400, 404                                        | Backend                 |
+| 19  | PATCH  | `/api/comments/{comment_id}`               | `body` 1..2000 optional                                                                                                             | 200 comment                                                           | 400, 403 `COMMENT_ACCESS_DENIED`, 404           | Backend                 |
+| 20  | DELETE | `/api/comments/{comment_id}`               | none                                                                                                                                | 204                                                                   | 403, 404                                        | Backend                 |
+| 21  | GET    | `/api/users/me`                            | none                                                                                                                                | 200 user                                                              | none                                            | Backend                 |
+| 22  | PATCH  | `/api/users/me`                            | `name` 0..255, `timezone` IANA name 0..64, both optional                                                                            | 200 user                                                              | 400                                             | Backend                 |
+| 23  | GET    | `/api/notifications?page=&per_page=`       | query ints (per_page capped at 100)                                                                                                 | 200 `[notification]` with `meta`                                      | none                                            | Backend, no UI          |
+| 24  | PATCH  | `/api/notifications/{id}/read`             | none                                                                                                                                | 200 notification                                                      | 404                                             | Backend, no UI          |
+| 25  | GET    | `/api/analytics/boards/{board_id}/summary` | none                                                                                                                                | 200 `{board_id, total_cards, completed_cards}`                        | 404                                             | Backend, no UI          |
 
-| Column       | Type                | Constraints                        |
-| ------------ | ------------------- | ---------------------------------- |
-| `id`         | `UUID`              | PK                                 |
-| `user_id`    | `UUID`              | FK → `users.id`, not null, indexed |
-| `name`       | `String(100)`       | not null                           |
-| `created_at` | `DateTime(tz=True)` | not null                           |
-| `updated_at` | `DateTime(tz=True)` | not null                           |
+Response objects (field names exactly as serialized):
 
-Unique constraint: `(user_id, lower(name))` — enforced at the DB level and checked case-insensitively in the service layer before insert to return a clean `409` rather than a raw DB exception.
+- **user** (register, `GET /users/me`, `PATCH /users/me`): `id`, `email`, `name`, `timezone`, `role`, `is_active`, `created_at`, `updated_at`.
+- **board**: `id`, `name`, `user_id`, `created_at`, `updated_at`. (`user_id` is the owner.)
+- **column**: `id`, `board_id`, `name`, `position`, `created_at`, `updated_at`.
+- **card**: `id`, `column_id`, `owner_id`, `title`, `description`, `order`, `deleted_at`, `created_at`, `updated_at`. No `position`, `priority` or `status`.
+- **comment**: `id`, `card_id`, `author_id`, `body`, `created_at`, `updated_at`.
+- **notification**: `id`, `user_id`, `title`, `body`, `is_read`, `created_at`, `updated_at`.
+- **board with contents** (Planned, route 6): the board object plus `columns`: a list of column objects ordered by `position`, each with `cards`: a list of card objects ordered by `order`, then `created_at`, excluding rows with `deleted_at`. Adding a field is a non-breaking change (`api-contracts.md` section 15).
 
-#### `Task`
+### 5.3 Extra URLs from double registration
 
-| Column        | Type                                | Constraints                                                                                                              |
-| ------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `id`          | `UUID`                              | PK                                                                                                                       |
-| `user_id`     | `UUID`                              | FK → `users.id`, not null, indexed                                                                                       |
-| `project_id`  | `UUID`                              | FK → `projects.id`, nullable, indexed                                                                                    |
-| `title`       | `String(255)`                       | not null                                                                                                                 |
-| `description` | `Text`                              | nullable                                                                                                                 |
-| `status`      | `Enum('todo','in_progress','done')` | not null, default `'todo'`                                                                                               |
-| `priority`    | `Enum('low','medium','high')`       | not null, default `'medium'`                                                                                             |
-| `due_date`    | `Date`                              | nullable                                                                                                                 |
-| `order`       | `Integer`                           | not null; user-scoped sequential integer; default = `SELECT COALESCE(MAX(order), 0) + 1 FROM tasks WHERE user_id = :uid` |
-| `created_at`  | `DateTime(tz=True)`                 | not null                                                                                                                 |
-| `updated_at`  | `DateTime(tz=True)`                 | not null                                                                                                                 |
+`backend/app/__init__.py` registers three blueprints twice. From reading the code (not executed), these additional URLs exist:
 
-The `order` column is the foundation for drag-and-drop reordering (a planned future enhancement listed in Requirement 10). It is present in the schema now so that future work does not require a migration that renumbers existing rows. `PATCH /api/v1/tasks/reorder` accepts an array of `{id, order}` pairs and bulk-updates order positions inside a single transaction, ensuring no two tasks share an order value for the same user after the operation.
+| Blueprint     | Intended prefix               | Extra prefix      | Extra URLs that result                                                                                                                                                                                                                                       |
+| ------------- | ----------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cards_bp`    | `/api/v1/cards`               | `/api/v1/columns` | `PATCH`/`DELETE /api/v1/columns/{card_id}`, `PATCH /api/v1/columns/{card_id}/position`. And at the intended prefix, `POST /api/v1/cards/{column_id}/cards`                                                                                                   |
+| `columns_bp`  | `/api/boards`, `/api/columns` | each other        | `POST /api/columns/{board_id}/columns`, `PATCH /api/columns/{board_id}/columns/reorder`, and `PATCH`/`DELETE /api/boards/{column_id}`. The last two have the same pattern as the board routes, which are registered first. They are expected to be shadowed. |
+| `comments_bp` | `/api/cards`, `/api/comments` | each other        | `PATCH`/`DELETE /api/cards/{comment_id}`, `GET`/`POST /api/comments/{card_id}/comments`                                                                                                                                                                      |
 
-Composite indexes on `(user_id, status)`, `(user_id, priority)`, and `(user_id, due_date)` to support common filter queries. Full-text search via a `tsvector` column on `title || ' ' || coalesce(description, '')`, updated by a PostgreSQL trigger.
+They are not part of the contract. Task P1 registers each blueprint once.
 
-#### `Activity`
+## 6. Frontend
 
-| Column       | Type                | Constraints                                            |
-| ------------ | ------------------- | ------------------------------------------------------ |
-| `id`         | `UUID`              | PK                                                     |
-| `user_id`    | `UUID`              | FK → `users.id`, not null, indexed                     |
-| `task_id`    | `UUID`              | FK → `tasks.id`, nullable (set to null on task delete) |
-| `event_type` | `String(64)`        | not null — e.g. `task.created`, `task.status_changed`  |
-| `payload`    | `JSONB`             | not null, stores diff or relevant fields               |
-| `created_at` | `DateTime(tz=True)` | not null                                               |
+### 6.1 Structure
 
-Activity records are **immutable** after creation. No application-level update or delete path exists for them.
+The repository does not follow the `features/` layout of `structure.md` section 5 (V-018). This design keeps the existing flat layout (`app/`, `components/`, `hooks/`, `lib/`, `context/`) and does not migrate it. New files go next to their siblings.
 
-### Validation Rules Summary
+### 6.2 Pages
 
-| Field            | Rule                                                        |
-| ---------------- | ----------------------------------------------------------- |
-| Task title       | 1–255 chars, not blank after strip                          |
-| Task description | 0–2000 chars                                                |
-| Task status      | one of `todo`, `in_progress`, `done`                        |
-| Task priority    | one of `low`, `medium`, `high`                              |
-| Task due_date    | ISO 8601 date string or null                                |
-| Project name     | 1–100 chars, not blank after strip                          |
-| Search query     | 1–100 chars                                                 |
-| Email            | valid RFC 5322 format                                       |
-| Password         | ≥ 8 chars, at least one uppercase, one lowercase, one digit |
+| Route          | File                                                 | Guard                              | Current                                                     | MVP plan                                                                               |
+| -------------- | ---------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `/`            | `app/page.tsx` renders `BoardsGrid`                  | `BoardsGrid` redirects to `/login` | Lists boards. No create control.                            | Add `CreateBoardForm` (F2).                                                            |
+| `/login`       | `app/login/page.tsx`                                 | none                               | Works. `router.push("/")` on success.                       | No change.                                                                             |
+| `/register`    | `app/register/page.tsx`                              | none                               | Works. Sends `name`, `email`, `password`. Goes to `/login`. | No change.                                                                             |
+| `/boards/[id]` | `app/boards/[id]/page.tsx` renders `BoardDetailView` | `useRequireAuth`                   | Read-only. Calls two missing endpoints.                     | Rewrite data load (F4). Columns, cards, dialog, search, drag and drop (F5 to F9, F11). |
+| `/profile`     | `app/profile/page.tsx`                               | none                               | Sends `{email, timezone}`: always 400.                      | Guard, load `GET /users/me`, send `{name, timezone}` (F3, F10).                        |
+| `/my-tasks`    | `app/my-tasks/page.tsx` renders `MyTasksList`        | none                               | Calls `GET /api/cards?assignee=me`, which does not exist.   | Remove (F12, D8).                                                                      |
 
-### Sorting Implementation
+`app/layout.tsx` wraps all pages in `AuthProvider` (`context/AuthContext.tsx`), `ErrorBoundary` and a single `Toaster`.
 
-The default task list order is `order ASC` (the user-defined drag-and-drop position). When a sort parameter is supplied, the sort chain is:
+### 6.3 Components and hooks
 
-1. **Primary**: the requested sort field and direction.
-2. **Secondary tiebreaker**: `tasks.order ASC`.
-3. **Final tiebreaker**: `tasks.created_at DESC`.
+| File                                                                  | Used today                          | MVP plan                                                                                                                    |
+| --------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `context/AuthContext.tsx`                                             | yes                                 | Replace the direct `fetch` in `login` with `apiClient` (F1). `logout()` stays client-only (R9).                  |
+| `lib/apiClient.ts`                                                    | yes (`get`, `post`, `patch`, `del`) | Keep. Add typed services on top (F1).                                                                                       |
+| `lib/errors.ts`                                                       | yes (`ApiError`)                    | Keep.                                                                                                                       |
+| `components/board/BoardsGrid.tsx`                                     | `/`                                 | Add the create control (F2). Uses `BoardCard` for board tiles.                                                              |
+| `components/board/BoardCard.tsx`                                      | `/` tiles                           | Also used for cards inside columns. Its labels `Open card: <title>` and `Delete card: <title>` are used by the e2e journey. |
+| `components/board/BoardDetailView.tsx`                                | `/boards/[id]`                      | Rewrite (F4).                                                                                                               |
+| `components/board/ColumnHeader.tsx`                                   | board page                          | Wire `onRename` and `onColumnDelete` (F5). Add move left and right.                                                         |
+| `components/board/AddCardForm.tsx`                                    | not mounted                         | Mount per column (F6). Props today: `onCardCreate(title)`. Extend to optional description.                                  |
+| `components/board/CardDetailModal.tsx`                                | not mounted                         | Mount (F7). Add edit, delete, comment edit and delete, move-to select. Fix the author label.                                |
+| `components/board/CommentList.tsx`                                    | via modal                           | Keep. Add edit and delete callbacks (F7).                                                                                   |
+| `components/board/SearchBar.tsx`, `hooks/useCardSearch.ts`            | not mounted                         | Replace with a plain text filter (F11). Remove the `assignee`, `due_date`, `label` fields and the `fetch` to `/api/cards`.  |
+| `hooks/useDragAndDrop.ts`                                             | not mounted                         | Fix payload and mount (F8).                                                                                                 |
+| `components/shared/BaseModal.tsx`, `BaseButton.tsx`, `BaseBadge.tsx`  | yes                                 | Keep.                                                                                                                       |
+| `components/shared/NotificationBell.tsx`, `hooks/useNotifications.ts` | not mounted                         | No change in the MVP (D6). The silent 404 handling is removed in F1.                                                        |
+| `components/board/MyTasksList.tsx`                                    | `/my-tasks`                         | Remove with the page (F12).                                                                                                 |
+| `hooks/useRequireAuth.ts`                                             | `/`, `/boards/[id]`                 | Also used by `/profile` (F3).                                                                                               |
+| `components/shared/Header.tsx`                                        | does not exist                      | New. Rendered in `app/layout.tsx` when a token exists. Links to `/` and `/profile`, Log out button (F3).                    |
+| `components/board/CreateBoardForm.tsx`                                | does not exist                      | New (F2).                                                                                                                   |
+| `components/board/AddColumnForm.tsx`                                  | does not exist                      | New (F5).                                                                                                                   |
+| `lib/services/{boards,columns,cards,comments,users}.ts`               | does not exist                      | New. Typed request and response per route, built on `apiClient` (F1).                                                       |
+| `lib/types/api.ts`                                                    | does not exist                      | New. TypeScript types equal to the objects in section 5.2.                                                                  |
+| `lib/apiPaths.ts`                                                     | does not exist                      | New. One place for every path string, so P1 is a one-file change.                                                           |
+| `lib/cardOrder.ts`                                                    | does not exist                      | New. Pure function computing the new `order` from the neighbours (F8).                                                      |
 
-This chain guarantees deterministic results even when many tasks share the same primary sort value.
+### 6.4 State
 
-Priority sort (descending) maps the enum to an integer weight for SQL ordering via a `CASE` expression:
+- Auth: `AuthContext` holds `token` and `currentUser` in React state. Nothing is persisted (D4). A reload clears them.
+- Board page: `BoardDetailView` owns `{status, board, columns[].cards[]}` from one request. Mutations call a service, then update local state or reload the board (section 7). The search text is local state and filters the rendered cards only.
+- Errors: every failed call goes through `ApiError`. `401` redirects to `/login`. Other errors show a toast or an inline `role="alert"` message. No error becomes an empty state.
 
-```python
-PRIORITY_WEIGHT = {"high": 3, "medium": 2, "low": 1}
+## 7. Data flows
+
+### 7.1 Read a board (D2)
+
+```mermaid
+sequenceDiagram
+    participant P as /boards/[id]
+    participant S as lib/services/boards
+    participant R as GET /api/boards/{id}
+    participant DB as PostgreSQL
+    P->>S: getBoard(id, token)
+    S->>R: Bearer token
+    R->>DB: board where id and owner_id = user
+    R->>DB: columns where board_id order by position
+    R->>DB: cards where column_id in (...) and deleted_at is null order by order, created_at
+    R-->>S: {data: board + columns[].cards[]}
+    S-->>P: typed BoardDetail
+    P->>P: render columns, cards, empty states
 ```
 
-Tasks without a `due_date` always sort last when sorting by due date, regardless of direction, using a `NULLS LAST` clause.
-
-### Pagination
-
-Standard offset-based pagination. The API returns:
-
-```json
-{
-  "data": {
-    "items": [...],
-    "pagination": {
-      "page": 1,
-      "per_page": 20,
-      "total": 143,
-      "total_pages": 8
-    }
-  }
-}
-```
-
----
-
-## Correctness Properties
-
-_A property is a characteristic or behavior that should hold true across all valid executions of a system — essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees._
-
-### Property 1: Task creation ownership
-
-_For any_ authenticated user and any valid task payload, the task returned after creation SHALL have its `user_id` set to the creating user's ID.
-
-**Validates: Requirements 2.2**
-
----
-
-### Property 2: Task creation defaults
-
-_For any_ valid task creation request that omits `status` and `priority`, the resulting task SHALL have `status = "todo"` and `priority = "medium"`.
-
-**Validates: Requirements 2.3, 2.4**
-
----
-
-### Property 3: Whitespace title rejection
-
-_For any_ string composed entirely of whitespace characters, submitting it as a task title SHALL be rejected and the task list SHALL remain unchanged.
-
-**Validates: Requirements 2.7**
-
----
-
-### Property 4: Title length enforcement
-
-_For any_ task title string, it SHALL be accepted when its length (after stripping) is in [1, 255] and rejected when its length is 0 (after stripping) or > 255.
-
-**Validates: Requirements 2.1, 2.7, 2.8**
-
----
-
-### Property 5: Description length enforcement
-
-_For any_ task description string, it SHALL be accepted when its length is ≤ 2000 characters and rejected when its length exceeds 2000 characters.
-
-**Validates: Requirements 2.5, 2.9**
-
----
-
-### Property 6: Cross-user task isolation
-
-_For any_ two distinct users A and B, a task owned by A SHALL never appear in the task list returned to B, regardless of filter, search, or sort parameters.
-
-**Validates: Requirements 3.8, 8.13**
-
----
-
-### Property 7: Filter AND semantics
-
-_For any_ combination of active filters (status, priority, project, overdue, due_today) and optional search query, every task returned SHALL satisfy ALL active criteria simultaneously.
-
-**Validates: Requirements 8.1, 8.2, 8.3, 8.4, 8.5, 8.9, 8.10**
-
----
-
-### Property 8: Overdue filter correctness
-
-_For any_ task list and user timezone, applying the overdue filter SHALL return exactly the tasks where `due_date < today(user_timezone)` AND `status != "done"`, and no others.
-
-**Validates: Requirements 8.6**
-
----
-
-### Property 9: Sort stability — tasks without due date appear last
-
-_For any_ task list sorted by due date in either direction, every task with a non-null `due_date` SHALL appear before every task with a null `due_date`.
-
-**Validates: Requirements 9.2**
-
----
-
-### Property 10: Priority sort order correctness
-
-_For any_ task list sorted by priority descending, every task with priority `high` SHALL appear before every task with priority `medium`, and every `medium` task SHALL appear before every `low` task.
-
-**Validates: Requirements 9.3**
-
----
-
-### Property 11: Task ownership enforcement on mutation
-
-_For any_ authenticated user, attempting to update or delete a task not owned by that user SHALL be rejected with `403 Forbidden` or a non-disclosing `404 Not Found`.
-
-**Validates: Requirements 4.8, 5.5**
-
----
-
-### Property 12: Task update preserves data on validation failure
-
-_For any_ valid existing task, submitting an invalid update (e.g., title too long, bad status value) SHALL leave the stored task data unchanged.
-
-**Validates: Requirements 4.6**
-
----
-
-### Property 13: Project name uniqueness per user (case-insensitive)
-
-_For any_ user who already owns a project with name N, attempting to create a second project with any case variant of N SHALL be rejected with `409 Conflict`. Different users SHALL be able to create projects with the same name.
-
-**Validates: Requirements 7.4, 7.5**
-
----
-
-### Property 14: Project deletion unassigns tasks atomically
-
-_For any_ project with associated tasks, deleting the project SHALL set all those tasks' `project_id` to null and remove the project record within a single transaction; the tasks themselves SHALL remain accessible.
-
-**Validates: Requirements 7.9, 7.10, 7.11**
-
----
-
-### Property 15: Search case-insensitive matching
-
-_For any_ search query Q and any task whose title or description contains Q as a substring (ignoring case), that task SHALL appear in the search results.
-
-**Validates: Requirements 8.8**
-
----
-
-### Property 16: Activity record immutability
-
-_For any_ activity record, once created it SHALL never be modified or deleted by any application-level operation.
-
-**Validates: Requirements 12.5**
-
----
-
-### Property 17: Persistence before success response
-
-_For any_ task or project create, update, or delete operation that returns HTTP 2xx, the backend SHALL have already committed the change to PostgreSQL. Conversely, if the commit fails, the backend SHALL NOT return a 2xx response.
-
-**Validates: Requirements 10.3, 10.6**
-
----
-
-### Property 18: Status and priority enum enforcement
-
-_For any_ request supplying a `status` value not in `{todo, in_progress, done}` or a `priority` value not in `{low, medium, high}`, the backend SHALL reject the request with HTTP `400 Bad Request`.
-
-**Validates: Requirements 2.10, 6.7**
-
----
-
-### Property 19: Task order uniqueness per user
-
-_For any_ user, after any reorder operation (`PATCH /api/v1/tasks/reorder`), no two tasks owned by that user SHALL share the same `order` value.
-
-**Validates: Requirements 9.1, 9.4, 9.5, 9.6**
-
----
-
-## Error Handling
-
-### HTTP Status Code Mapping
-
-| Situation                                     | Status Code                                         |
-| --------------------------------------------- | --------------------------------------------------- |
-| Invalid request body / query params           | `400 Bad Request`                                   |
-| Missing or invalid JWT                        | `401 Unauthorized`                                  |
-| Authenticated but not authorized              | `403 Forbidden` or `404 Not Found` (non-disclosing) |
-| Resource not found                            | `404 Not Found`                                     |
-| Duplicate project name (same user)            | `409 Conflict`                                      |
-| Stale update conflict (`updated_at` mismatch) | `409 Conflict`                                      |
-| Application or database connectivity failure  | `503 Service Unavailable` with `Retry-After` header |
-| Unexpected server error                       | `500 Internal Server Error`                         |
-
-### Error Response Envelope
-
-```json
-{
-  "data": null,
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Title must be between 1 and 255 characters.",
-    "details": {
-      "field": "title"
-    }
-  }
-}
-```
-
-Internal stack traces, SQL errors, and secrets are never included in `500` responses. A structured log entry with the request ID is emitted server-side instead.
-
-### Frontend Error Handling
-
-- React Query's `onError` callbacks surface API errors to the UI via toast notifications.
-- Form-level errors from `400` responses are merged into react-hook-form's error state so the user's input is preserved (Requirement 11.12).
-- Network failures and `5xx` errors display a generic retry prompt.
-- Loading and error boundary states are implemented for every data-dependent page (Requirement 3.5, 3.6).
-
-### Database Failure Handling
-
-- SQLAlchemy's `Session.rollback()` is called in every exception handler before returning an error response.
-- The backend never sends `2xx` after a failed commit (Property 17).
-- Connection pool exhaustion returns `503` with a `Retry-After` header.
-
-### JWT Handling
-
-- Access token TTL: 15 minutes.
-- Refresh token TTL: 7 days, stored server-side in the `refresh_tokens` table for revocation support.
-- On `401`, the frontend attempts a silent token refresh via `POST /api/auth/refresh`; if that fails it clears auth state and redirects to `/auth/login`.
-- Secrets (`JWT_SECRET_KEY`, database URL, etc.) are stored in environment variables and never committed to the repository.
-
----
-
-## Testing Strategy
-
-### Dual Testing Approach
-
-The testing strategy combines **example-based unit and integration tests** for concrete scenarios with **property-based tests** for universal behavioral guarantees.
-
-### Unit Tests (Pytest)
-
-Focus areas:
-
-- Task and project validation logic (title length, whitespace, enum values, description length).
-- Priority sort weight mapping (`PRIORITY_WEIGHT`).
-- Timezone-aware overdue and due-today date calculations.
-- JWT generation and validation helpers.
-- Pagination offset/limit math.
-- Password hashing: verify stored value ≠ plaintext; verify correct password passes; verify wrong password fails.
-
-### Integration Tests (Pytest + test database)
-
-Focus areas:
-
-- Full CRUD lifecycle for tasks and projects via the Flask test client.
-- Cross-user isolation: authenticated as user B, attempt to read/modify user A's resources.
-- Filter AND logic: apply multiple simultaneous filters and assert only matching records are returned.
-- Project deletion transaction: verify tasks are unassigned and project is removed in one operation.
-- Activity log entries are created for task lifecycle events.
-- Stale update conflict detection (optimistic locking via `updated_at`).
-- API error envelopes match the defined structure for each error type.
-- Duplicate email registration returns `409`.
-- Invalid JWT (tampered signature, expired): returns `401`.
-
-### Property-Based Tests (Pytest + Hypothesis)
-
-Each property test runs a **minimum of 100 iterations** via Hypothesis's `@given` decorator. Each test is tagged with its design property using the comment format:
-
-```
-# Feature: task-management-app, Property N: <property text>
-```
-
-Example:
-
-```python
-# Feature: task-management-app, Property 3: Whitespace title rejection
-@given(title=st.text(alphabet=string.whitespace, min_size=1))
-def test_whitespace_title_rejected(client, auth_headers, title):
-    response = client.post("/api/v1/tasks", json={"title": title}, headers=auth_headers)
-    assert response.status_code == 400
-```
-
-Properties targeted by Hypothesis tests:
-
-| Design Property                                         | Generator Strategy                                                                                      |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Property 2: Task creation defaults                      | Generate valid payloads omitting `status`/`priority`; assert defaults applied                           |
-| Property 3: Whitespace title rejection                  | Generate whitespace-only strings; assert `400`                                                          |
-| Property 4: Title length enforcement                    | Generate titles of varying lengths; assert accept/reject boundary at 1 and 255                          |
-| Property 5: Description length enforcement              | Generate descriptions of varying lengths; assert boundary at 2000                                       |
-| Property 6: Cross-user task isolation                   | Create tasks as user A; list/filter/search as user B; assert empty result                               |
-| Property 7: Filter AND semantics                        | Generate task sets and random filter combinations; assert every result satisfies all active filters     |
-| Property 8: Overdue filter correctness                  | Generate tasks with varying `due_date`s and statuses; verify overdue result set matches exact condition |
-| Property 9: Due date sort — nulls last                  | Generate task sets with mixed null/non-null dates; assert nulls always appear after non-nulls           |
-| Property 10: Priority sort order                        | Generate task sets; assert `high` > `medium` > `low` ordering holds for all inputs                      |
-| Property 13: Project name uniqueness (case-insensitive) | Generate name variants with different casing; assert reject for same user, accept for different user    |
-| Property 15: Search case-insensitive                    | Create task with known substring; search with varied casing; assert task appears in results             |
-| Property 17: Persistence before success                 | Generate valid payloads; assert DB record reflects change after `2xx` response                          |
-| Property 18: Enum enforcement                           | Generate arbitrary non-enum strings for `status`/`priority`; assert `400`                               |
-| Property 19: Task order uniqueness per user             | Generate reorder payloads; assert no two tasks share `order` value for same user after operation        |
-
-Properties 1, 11, 12, 14, and 16 are covered by integration tests with targeted examples (ownership on creation, ownership on mutation, validation failure preservation, atomic project deletion, activity immutability).
-
-### End-to-End Tests (Playwright)
-
-Scenarios:
-
-- Register → login → create task → edit task → delete task.
-- Create project → assign task → view project → delete project (verify tasks survive on dashboard).
-- Apply status, priority, and overdue filters simultaneously; verify UI matches expected results.
-- Search with mixed casing; verify results.
-- Sort by due date ascending; verify null due dates appear last in the list.
-- Logout → verify private routes redirect to `/auth/login`.
-- Attempt to access another user's task URL directly; verify `404` or redirect.
-
-### Security Tests
-
-- Authentication bypass: requests to protected endpoints without JWT return `401`.
-- Cross-user BOLA: authenticated as user B, `GET /api/v1/tasks/:id` for a task owned by A returns `404`.
-- Invalid JWT (tampered signature, expired token): returns `401`.
-- SQL injection: title field containing SQL metacharacters is stored safely and returns expected data.
-- XSS: task title containing `<script>` is returned as escaped text in the API response.
-- Duplicate email registration: returns `409` without revealing whether the email exists.
+Rules: three queries regardless of column count (N4.1). A missing or foreign board returns 404 `BOARD_NOT_FOUND` before the other queries run. A board with no columns returns `columns: []`. A column with no cards returns `cards: []`.
+
+### 7.2 Create flows
+
+- Create board: `CreateBoardForm` -> `POST /api/boards {name}` -> append to list. On 409 the form shows the message and keeps the name.
+- Add column: `AddColumnForm` -> `POST /api/boards/{id}/columns {name}` -> append column with `cards: []`.
+- Add card: `AddCardForm` -> `POST /api/v1/columns/{column_id}/cards {title, description?}` -> append to the column.
+
+### 7.3 Move a card
+
+The backend `move_card` sets `column_id` and `order` from the request, then renumbers every card in the destination column, and in the source column when it differs, to `0.0, 1.0, 2.0, ...` sorted by `(order, created_at)`.
+
+Consequence: after any move, the stored orders no longer equal the values the client computed. A client that keeps its local `order` values and computes the next midpoint from them can place the next card in the wrong spot, because the server compares the midpoint with the renumbered values.
+
+Design: after the request settles (success or failure), `BoardDetailView` reloads the board (section 7.1) and replaces its state. Between the drop and the reload the UI shows the optimistic position. On failure the reload restores the previous state and a toast shows the error.
+
+New `order` on drop (`lib/cardOrder.ts`), with neighbours taken from the target column as currently rendered (excluding the dragged card):
+
+| Drop position                       | `order`                   |
+| ----------------------------------- | ------------------------- |
+| Empty column                        | `0.0`                     |
+| Before the first card (first.order) | `first.order / 2`         |
+| Between a and b                     | `(a.order + b.order) / 2` |
+| After the last card (last.order)    | `last.order + 1.0`        |
+
+Tie at the top: after any move the server renumbers the column to 0, 1, 2, so the first card always has order 0, and the client value for a drop before it is   / 2 = 0. The new card then ties with the first card. The backend therefore breaks ties in favour of the moved card (R5.10, task B5): in the renumbering sort, the moved card comes before another card with the same order. A test drops a card at the top and expects it first after a reload.
+
+Second backend rule (R5.3): the destination column must belong to the same board as the card (task B5).
+
+### 7.4 Delete flows
+
+- Card (D7): `DELETE /api/v1/cards/{id}`, confirmation first. Backend sets `deleted_at`. The board read filters it.
+- Column (D3): `DELETE /api/columns/{id}`. 409 while it has non-deleted cards. The UI shows "Move or delete this column's cards first."
+- Board (D1): `DELETE /api/boards/{id}`, confirmation names the board and card count. Card count comes from the board read, so the confirmation is available only on the board page. The list page shows a count-less confirmation ("Delete board X and everything in it?").
+
+### 7.5 Session
+
+Login stores `access_token` and `user` in React state. Nothing is written to browser storage. Reload clears the state, and each guarded page redirects to `/login` (D4). Logout clears the state. The access token stays valid on the server until it expires (15 minutes). Server-side revocation needs R9.4.
+
+## 8. Contract mismatches found and the resolution chosen
+
+From `.agents/tasks/requirements-gap-report.md` section 4, re-checked against the code.
+
+| #   | Frontend today                                                                          | Backend today                                                      | Resolution                                                                      | Task    |
+| --- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------- | ------- |
+| 5   | `GET /api/boards/{id}/columns` (`BoardDetailView`)                                      | Route does not exist (405)                                         | Remove the call. Use the embedded board read (D2).                              | B1, F4  |
+| 6   | `GET /api/v1/cards?column_id=` per column                                               | Route does not exist (404)                                         | Same as above.                                                                  | B1, F4  |
+| 6a  | Card field `position`                                                                   | `order`                                                            | Frontend types use `order`. Backend unchanged.                                  | F4, F8  |
+| 7   | `GET /api/cards?assignee=me` (`MyTasksList`)                                            | Route and assignee do not exist                                    | Remove page and component (D8).                                                 | F12     |
+| 8   | `GET /api/cards?search=&assignee=&due_date_from=&due_date_to=&label=` (`useCardSearch`) | Route and those fields do not exist                                | Client-side search on title and description (D9, D13). Remove the hook's fetch. | F11     |
+| 9   | Notification fields `message`, `read`, `createdAt` (`useNotifications`)                 | `title`, `body`, `is_read`, `created_at`                           | Out of MVP (D6). When it returns, the frontend adapts to the backend shape.     | F1, F13 |
+| 10  | `PATCH /api/users/me {email, timezone}`                                                 | Accepts `name`, `timezone` only                                    | Send `{name, timezone}`. Email read-only (D5).                                  | F10     |
+| 11  | `PATCH /api/v1/cards/{id}/position {column_id, position}`                               | Requires `{column_id, order}`                                      | Send `order`. Add contract test.                                                | F8, C1  |
+| 2   | Login response `user` has no `name`                                                     | `login` returns `id`, `email`, `role`, `timezone`                  | No backend change. `/profile` loads `GET /api/users/me`.                        | F10     |
+| new | `priority`, `status` sent by nobody                                                     | Accepted and dropped by card schemas                               | Reject them (R4.4). No consumer exists.                                         | B8      |
+| new | Frontend assumes sessions survive reload                                                | They do not (V-009)                                                | Documented limitation (R9.1). e2e logs in again.                                | E1      |
+| new | `.env.example` and Vercel use an origin as base URL                                     | `api-contracts.md` shows base URL with `/api/v1`                   | Keep origin. Put the prefix in `lib/apiPaths.ts`.                               | P1      |
+| new | Path ids are parsed with `uuid.UUID(value)` in every route                              | An invalid id raises `ValueError`, handled as 500 `INTERNAL_ERROR` | Use the `<uuid:...>` converter, so a bad id is a 404. (R10.11)                  | B11     |
+
+## 9. Error handling
+
+| Operation                                      | Failure                                                           | Recoverable                | Caller receives                                                                                                                     | Logged                                     |
+| ---------------------------------------------- | ----------------------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Any protected route                            | Missing, malformed, expired or unknown-user token                 | Yes (log in again)         | 401 `UNAUTHORIZED`, message "Authentication required."                                                                              | No                                         |
+| Any write route                                | Body fails schema (type, length, unknown field, blank after trim) | Yes (fix input)            | 400 `VALIDATION_ERROR`, `details` = field map                                                                                       | No                                         |
+| Any route                                      | Body not JSON                                                     | Yes                        | 415 `HTTP_ERROR` from Flask                                                                                                         | No                                         |
+| Any route                                      | Path id not a UUID                                                | Yes                        | Current: 500 `INTERNAL_ERROR`. Planned: 404 `HTTP_ERROR` (B11)                                                                      | Current: error with stack trace            |
+| Any route                                      | Unknown URL or method                                             | Yes                        | 404 or 405 `HTTP_ERROR`                                                                                                             | No                                         |
+| Register                                       | Email exists                                                      | Yes                        | 409 `RESOURCE_CONFLICT`                                                                                                             | Yes, `error` level with type, code, status |
+| Login                                          | Unknown email or wrong password                                   | Yes                        | 401 `INVALID_CREDENTIALS`                                                                                                           | Yes (as above)                             |
+| Board create or rename                         | Name used by the user (case-insensitive)                          | Yes                        | 409 `RESOURCE_CONFLICT`                                                                                                             | Yes                                        |
+| Board, column, card, comment, analytics routes | Resource missing or not owned                                     | Yes                        | 404 `*_NOT_FOUND`                                                                                                                   | Yes                                        |
+| Comment edit and delete                        | Not the author                                                    | Yes                        | Current 403 `COMMENT_ACCESS_DENIED`. Planned 404 (B6)                                                                               | Yes                                        |
+| Column delete                                  | Column has cards (Planned, D3)                                    | Yes (move or delete cards) | 409 `RESOURCE_CONFLICT`, message "Column still has cards"                                                                           | Yes                                        |
+| Move card                                      | Destination column not owned or on another board                  | Yes                        | 404 `COLUMN_NOT_FOUND`                                                                                                              | Yes                                        |
+| Any write                                      | Database error on commit                                          | Not by the caller          | Session rolled back. 500 `INTERNAL_ERROR`, message "An unexpected server error occurred"                                            | Yes, `logger.exception` with stack trace   |
+| Any write                                      | Two concurrent board creates with the same name                   | Yes                        | One succeeds. Without the unique index (R12.5) both may. With it, the loser gets a database error that the service must map to 409. | Yes                                        |
+| Frontend                                       | 401 from any call                                                 | Yes                        | Redirect to `/login`, token cleared                                                                                                 | No                                         |
+| Frontend                                       | Network failure or timeout                                        | Yes                        | Inline error with a Retry control, typed input kept                                                                                 | No                                         |
+| Frontend                                       | Optimistic move fails                                             | Yes                        | State reloaded from server, toast with the message                                                                                  | No                                         |
+
+Logging today: `AppException` is logged at `error` level with `error_type`, `error_code`, `status_code`. Validation errors and HTTP errors are not logged. There is no request id, no user id and no log of 401s from `token_required`. N1.10 is Planned.
+
+## 10. Input validation
+
+Marshmallow schemas in each blueprint's `schema.py` own request validation. The service owns business rules. The database owns constraints. The frontend validates for usability only.
+
+| Input                              | Required                  | Type and limits                                                                                                  | On failure                          |
+| ---------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `name` (register)                  | yes                       | string 1..255 after trim                                                                                         | 400, field `name`                   |
+| `email`                            | yes                       | valid email; stored lowercase                                                                                    | 400                                 |
+| `password`                         | yes                       | string 8+, lower, upper, digit                                                                                   | 400 with policy message             |
+| `name` (board, column)             | board, column create: yes | string 1..100 after trim, not blank                                                                              | 400, field `name`                   |
+| `position` (column)                | no                        | integer >= 0                                                                                                     | 400                                 |
+| `ordered_ids`                      | yes                       | non-empty list of UUID                                                                                           | 400. Unknown id for this board: 404 |
+| `title` (card)                     | create: yes               | string 1..255 after trim, not blank                                                                              | 400                                 |
+| `description` (card)               | no                        | string up to 2000, default `""`                                                                                  | 400                                 |
+| `column_id` (move)                 | yes                       | UUID                                                                                                             | 400                                 |
+| `order` (move)                     | yes                       | float >= 0                                                                                                       | 400                                 |
+| `body` (comment)                   | create: yes               | string 1..2000 after trim, not blank                                                                             | 400                                 |
+| `timezone`                         | no                        | IANA name, up to 64                                                                                              | 400                                 |
+| `page`, `per_page` (notifications) | no                        | ints. `per_page` capped at 100. A non-integer value falls back to the default. Negative values are not rejected. | Not validated today                 |
+| Path ids                           | yes                       | UUID                                                                                                             | Planned 404 (B11)                   |
+| Search text (frontend)             | no                        | 0..100 characters, trimmed                                                                                       | Input `maxLength=100`               |
+
+Whitespace rules: `name`, `title`, `body` are trimmed and a blank result is rejected.
+
+Known gap: `UpdateUserSchema.name` has no minimum length, so an empty name is accepted.
+
+## 11. Where each invariant is enforced
+
+| Invariant                                        | Layer                                                     | Why                                                                                                      |
+| ------------------------------------------------ | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| A user only touches resources on boards they own | Service (query joins the board and filters `owner_id`)    | Needs the user and the resource together. Routes stay thin. A frontend check is not a security boundary. |
+| Board name unique per user (case-insensitive)    | Service now. Database unique index added (R12.5)          | The service gives a clear 409. The index closes the race.                                                |
+| Column positions are 0..n-1 per board            | Service (`_renormalise_column_positions`)                 | Needs all siblings. A check constraint only enforces `>= 0`.                                             |
+| Card order is non-negative                       | Database check constraint and schema                      | Defence in depth.                                                                                        |
+| Card order is consistent after a move            | Service, one transaction                                  | Both columns update together.                                                                            |
+| A moved card stays in its board                  | Service (Planned, B5)                                     | Needs both columns.                                                                                      |
+| A column with cards cannot be deleted            | Service (Planned, B2)                                     | Needs a count. The database cascade would otherwise delete cards.                                        |
+| Card delete hides the card everywhere            | Service queries filter `deleted_at IS NULL` (Planned, B3) | One helper used by board read, comments, search source, analytics, move and update.                      |
+| Only the author edits or deletes a comment       | Service                                                   | Needs `author_id` and the user.                                                                          |
+| Passwords are never returned                     | Serializer (`User.to_dict` has no hash)                   | One place.                                                                                               |
+| Required production secrets exist                | `ProductionConfig.init_app`                               | The app does not start without them.                                                                     |
+
+## 12. Security notes
+
+Done in code (read, not run): Bearer JWT with `exp`, algorithm allowlist `["HS256"]` on decode; CORS allowlist without wildcard and without credentials; ownership joins on every board, column, card and analytics query; envelope that hides stack traces; token kept in memory (V-010 fixed); no `dangerouslySetInnerHTML` in `app`, `components`, `hooks`.
+
+Open or Planned:
+
+- No rate limiting (V-011, N1.3). A shared store is required because Railway runs several gunicorn workers.
+- No security headers (N1.4). Add in `app/__init__.py` (`after_request`) for the API and in `frontend/next.config.ts` for pages. CSP must be tested with the app before it ships.
+- No request body limit (N1.5). Set `MAX_CONTENT_LENGTH`.
+- Swagger UI and `apispec` are served by flasgger defaults (N1.6). Disable or protect them in production.
+- Password hashing is the Werkzeug default (V-013, N1.8). Switch to Argon2id or bcrypt, with rehash on login.
+- Comment edit and delete answer 403 (R6.5) and skip the board check.
+- `HS256` shared secret and 15-minute access token are fine for the MVP. The refresh token returned in the login body is unused. Remove it from the response or implement R9.4. Until then it should not be returned (B12).
+- CSRF is not needed while the Bearer token lives in memory and cookies are not used. It becomes required with R9.4.
+- Logout does not revoke the access token (R1.12).
+
+## 13. Traceability
+
+Legend for tests. `be:` = `backend/tests/`, `fe:` = `frontend/`, `e2e:` = `e2e/tests/`. `(new)` = does not exist yet. Existing test files were listed, not run, for this document. "FE" = frontend. Route numbers refer to section 5.2.
+
+### 13.1 Functional requirements
+
+| Criteria               | Flask route(s)                            | Next.js page / component                                   | Tests                                                                                                                                                  |
+| ---------------------- | ----------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| R1.1, R1.2, R1.3, R1.4 | 1                                         | `/register` (`app/register/page.tsx`)                      | be: `api/test_auth_routes.py` (exists); `test_auth_service.py` (exists)                                                                                |
+| R1.5, R1.6             | 2                                         | `/login`, `AuthContext.login`                              | be: `test_auth_service.py` (exists, service level); `api/test_auth_routes.py` login cases (new); fe: `context/__tests__/AuthContext.test.tsx` (exists) |
+| R1.7                   | 2                                         | none                                                       | be: `api/test_auth_routes.py` weak-password login returns 401 (new)                                                                                    |
+| R1.8                   | 4 to 25                                   | none                                                       | be: `security/test_authorization.py` loops over all protected routes without a token (new)                                                             |
+| R1.9, R1.10            | none                                      | `useRequireAuth`, `/profile`, `/login`                     | fe: `hooks/__tests__/useRequireAuth.test.tsx` (exists); `app/profile/__tests__` (new); e2e: `auth.spec.ts` (exists)                                    |
+| R1.11, R1.12           | none                                      | `components/shared/Header.tsx` (new), `AuthContext.logout` | fe: `components/shared/__tests__/Header.test.tsx` (new); e2e: `auth.spec.ts` logout case (exists, cannot pass until the button exists)                 |
+| R1.13                  | 1                                         | none                                                       | be: `api/test_auth_routes.py` `test_register_response_never_contains_password_or_hash` (exists)                                                        |
+| R2.1, R2.2             | 4                                         | `CreateBoardForm` (new) on `/`                             | be: `api/test_board_routes.py` (new); fe: `components/board/__tests__/CreateBoardForm.test.tsx` (new)                                                  |
+| R2.3                   | 5                                         | `BoardsGrid`                                               | fe: `components/board/__tests__/BoardsGrid.test.tsx` (exists); be: `api/test_board_routes.py` list isolates users (new)                                |
+| R2.4                   | 4                                         | `CreateBoardForm`, `BoardsGrid`                            | fe: `CreateBoardForm.test.tsx` payload and 409 (new); e2e: `kanban-journey.spec.ts` (exists, to rewrite)                                               |
+| R2.5                   | 6                                         | none (data source for `BoardDetailView`)                   | be: `api/test_board_routes.py` shape, ordering, soft-deleted excluded, query count (new)                                                               |
+| R2.6                   | 6                                         | `BoardDetailView`                                          | fe: `components/board/__tests__/BoardDetailView.test.tsx` (exists, to rewrite)                                                                         |
+| R2.7                   | 6, 7, 8                                   | `BoardDetailView` error state                              | be: `security/test_authorization.py` other user's board returns 404 (new)                                                                              |
+| R2.8, R2.9             | 7                                         | `BoardDetailView` header rename (new)                      | be: `api/test_board_routes.py` (new); fe: new test                                                                                                     |
+| R2.10, R2.11           | 8                                         | delete control with confirmation (new)                     | be: `integration/test_board_delete.py` children unreadable (new); fe: new test                                                                         |
+| R3.1, R3.2             | 9                                         | `AddColumnForm` (new)                                      | be: `api/test_column_routes.py` (new); fe: new test                                                                                                    |
+| R3.3, R3.6             | 10                                        | `ColumnHeader`                                             | be: `api/test_column_routes.py` (new); fe: `ColumnHeader.test.tsx` (new)                                                                               |
+| R3.4                   | 12                                        | `ColumnHeader` move left and right (new)                   | be: `api/test_column_routes.py` partial and foreign ids (new)                                                                                          |
+| R3.5, R3.7             | 11                                        | `ColumnHeader` delete, toast                               | be: `api/test_column_routes.py` 409 with cards, 204 when empty (new); fe: new test                                                                     |
+| R3.8                   | 9 to 12                                   | none                                                       | be: `security/test_authorization.py` (new)                                                                                                             |
+| R4.1, R4.2, R4.8       | 13                                        | `AddCardForm`                                              | be: `api/test_card_routes.py` (new); fe: `AddCardForm.test.tsx` (new)                                                                                  |
+| R4.3, R4.6, R4.7       | 14                                        | `CardDetailModal`                                          | be: `api/test_card_routes.py` (new); fe: `CardDetailModal.test.tsx` (new)                                                                              |
+| R4.4                   | 13, 14                                    | none                                                       | be: `api/test_card_routes.py` priority and status rejected (new)                                                                                       |
+| R4.5                   | 15                                        | `CardDetailModal` delete with confirmation                 | be: `api/test_card_routes.py` and `integration/test_card_soft_delete.py` (new)                                                                         |
+| R5.1, R5.2, R5.4       | 16                                        | none                                                       | be: `test_cards_service.py` move tests (exist); `api/test_card_routes.py` (new)                                                                        |
+| R5.3, R5.10 | 16 | none | be: `test_cards_service.py` cross-board move rejected, tie goes to the moved card (new)                                                                                            |
+| R5.5, R5.6, R5.9       | 16, 6                                     | `useDragAndDrop`, `BoardDetailView`, `lib/cardOrder.ts`    | fe: `lib/__tests__/cardOrder.test.ts` and `hooks/__tests__/useDragAndDrop.test.tsx` assert the exact body `{column_id, order}` (new)                   |
+| R5.7                   | 6, 16                                     | `BoardDetailView`                                          | e2e: `kanban-journey.spec.ts` log in again and compare positions (to rewrite)                                                                          |
+| R5.8                   | 16                                        | `CardDetailModal` move-to select                           | fe: new test; e2e: keyboard move (new)                                                                                                                 |
+| R6.1, R6.2             | 17, 18                                    | `CardDetailModal`, `CommentList`                           | be: `test_comments.py` (exists: create 201, missing body 400, 401, other user 403 or 404); list ordering (new); fe: `CommentList.test.tsx` (exists)    |
+| R6.3, R6.4             | 19, 20                                    | `CommentList` edit and delete (new)                        | be: `api/test_comment_routes.py` (new); fe: new test                                                                                                   |
+| R6.5                   | 19, 20                                    | none                                                       | be: `security/test_authorization.py` other user's comment returns 404 (new)                                                                            |
+| R6.6                   | 17, 18                                    | none                                                       | be: `test_comments.py` (exists)                                                                                                                        |
+| R6.7                   | 17 to 20                                  | `CardDetailModal`                                          | fe: new test; e2e: `kanban-journey.spec.ts` (to rewrite)                                                                                               |
+| R7.1, R7.2             | 21, 22                                    | none                                                       | be: `api/test_user_routes.py` (new)                                                                                                                    |
+| R7.3, R7.4, R7.5       | 21, 22                                    | `/profile`                                                 | fe: `app/profile/__tests__/page.test.tsx` asserts body `{name, timezone}` (new)                                                                        |
+| R8.1 to R8.6           | none (client side)                        | `SearchBar`, `BoardDetailView`                             | fe: `components/board/__tests__/SearchBar.test.tsx` and `BoardDetailView.test.tsx` (new)                                                               |
+| R9.1, R9.3             | 2                                         | `AuthContext`, `useRequireAuth`                            | fe: `AuthContext.test.tsx` (exists), `useRequireAuth.test.tsx` (exists); e2e: reload goes to `/login` (new)                                            |
+| R9.2                   | none                                      | `AuthContext`                                              | fe: test that no storage API is called (new)                                                                                                           |
+| R9.4, R9.5 | planned `/api/v1/auth/refresh`, `/logout`; route 2 for R9.5 | none | R9.5: be: `api/test_auth_routes.py` login body has no `refresh_token` (new). R9.4: Planned with P2 |
+| R10.1, R10.2, R10.3    | all                                       | none                                                       | be: `unit/test_error_handlers.py` (new)                                                                                                                |
+| R10.4, R10.5           | all                                       | `lib/apiPaths.ts` (new)                                    | be: `api/test_url_map.py` lists `app.url_map` and fails on aliases (new)                                                                               |
+| R10.6, R10.7           | none                                      | `lib/apiClient.ts`, `lib/services/*`                       | fe: `lib/__tests__/apiClient.test.ts` and service tests (new)                                                                                          |
+| R10.8                  | all routes with a body                    | all `lib/services/*`                                       | be: `api/test_contract_payloads.py` (new). fe: `lib/__tests__/contracts.test.ts` (new). Both read `docs/api/contract-samples.json` (new)               |
+| R10.9, R10.10          | all                                       | none                                                       | Document check in review. No automated test.                                                                                                           |
+| R10.11                 | 6 to 25                                   | none                                                       | be: `api/test_error_handling.py` invalid id returns 404 (new)                                                                                          |
+| R11.1 to R11.4         | 4 to 25                                   | none                                                       | be: `security/test_authorization.py` (new). Existing partial: `test_comments.py`                                                                       |
+| R11.5                  | none                                      | `useRequireAuth`                                           | covered by R11.1 tests                                                                                                                                 |
+| R12.1, R12.2, R12.4    | all writes                                | none                                                       | be: `integration/test_*_database.py` (new). Existing partial: `test_cards_service.py`                                                                  |
+| R12.3                  | 9, 16                                     | none                                                       | be: `integration/test_constraints.py` negative position (new)                                                                                          |
+| R12.5                  | 4                                         | none                                                       | be: `integration/test_board_database.py` duplicate insert fails (new)                                                                                  |
+| R12.6                  | none                                      | none                                                       | Not testable in the repository. Verified in Railway settings (manual).                                                                                 |
+| R13.1, R13.2           | 25                                        | none                                                       | be: `api/test_analytics_routes.py` (new)                                                                                                               |
+| R14.1, R14.2           | 23, 24                                    | none                                                       | be: `api/test_notification_routes.py` (new)                                                                                                            |
+| R14.3, R14.4           | none                                      | none                                                       | Review check.                                                                                                                                          |
+
+### 13.2 Non-functional requirements
+
+| Criteria     | Implementation location                                                              | Tests                                                                                             |
+| ------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| N1.1         | `app/__init__.py` (`cors.init_app`), `app/config.py`                                 | be: `api/test_cors_health.py` (exists)                                                            |
+| N1.2         | `ProductionConfig.init_app`                                                          | be: `unit/test_config.py` (exists)                                                                |
+| N1.3         | Planned P3                                                                           | be: 429 after the limit (new)                                                                     |
+| N1.4         | Planned P5 in `app/__init__.py` and `frontend/next.config.ts`                        | be: headers present (new); e2e: page loads with CSP (new)                                         |
+| N1.5         | Planned P5                                                                           | be: oversized body returns 413 (new)                                                              |
+| N1.6         | Planned P4                                                                           | be: `/apidocs/` returns 404 or 401 in production config (new)                                     |
+| N1.7         | all components                                                                       | fe: test with `<script>` in a title renders as text (new)                                         |
+| N1.8         | Planned P7 in `auth/service.py`                                                      | be: `test_auth_service.py` hash prefix (new)                                                      |
+| N1.9         | Planned with P2                                                                      | Planned                                                                                           |
+| N1.10        | Planned P6                                                                           | be: log record test (new)                                                                         |
+| N2.1 to N2.4 | `components/board/*`, `components/shared/BaseModal.tsx`                              | fe: role and label queries in each component test; e2e: keyboard path (new); manual keyboard pass |
+| N3.1         | board page layout                                                                    | e2e: viewport 375 and 1280 (new)                                                                  |
+| N4.1         | route 6                                                                              | be: query-count assertion (new)                                                                   |
+| N4.2         | none                                                                                 | No measurement. Not tested.                                                                       |
+| N4.3         | none                                                                                 | Review check.                                                                                     |
+| N5.1 to N5.4 | `backend/Procfile`, `docs/deployment-*.md`, `frontend/next.config.ts`, `/api/health` | be: `api/test_cors_health.py` health test (exists). Deployment steps are manual checks.           |
+| N6.1 to N6.4 | `backend/tests`, `frontend`, `e2e`                                                   | CI: `.github/workflows/backend-ci.yml`, `frontend-ci.yml`, `playwright.yml` (exist)               |
+
+### 13.3 The critical journey
+
+The end-to-end test `e2e/tests/kanban-journey.spec.ts` (rewritten with Page Objects in E1) covers, in order: register, log in, create a board, open it, add two columns, add a card, open the card, add and edit and delete a comment, drag the card to the second column, log out, log in again, open the board, and assert the card is in the second column at the same position. The reload step of the existing file is replaced by a second login, because of R9.1.
+
+## 14. Testability notes
+
+- Services take a user object and ids, so they run under Pytest with the existing `conftest.py` fixtures (`make_user`, `make_board`, `make_column`, `make_card`) and a PostgreSQL test database (`TEST_DATABASE_URL`).
+- Authorization and shape checks belong to API tests with the Flask test client. Database constraints and cascades need PostgreSQL, not SQLite (`testing.md` section 6.2).
+- `lib/cardOrder.ts` and the search filter are pure functions and get unit tests.
+- Contract tests share one file of sample payloads so frontend and backend cannot drift (V-032).
+- Drag and drop in Playwright uses `locator.dragTo`. The keyboard path (R5.8) is the stable alternative.
+
+## 15. Deviations from steering documents (reported, not fixed here)
+
+| Document                         | Deviation                                                                                                                                                                                                                                                                                            | Reference                                  |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `api-contracts.md` 3.2           | Prefix split                                                                                                                                                                                                                                                                                         | V-019, P1                                  |
+| `api-contracts.md` 5.2, 6.2, 7.2 | `snake_case` fields, `meta` shape, error codes                                                                                                                                                                                                                                                       | V-020                                      |
+| `api-contracts.md` 4.3           | Move is `PATCH /cards/{id}/position {column_id, order}`, the canonical table says `PATCH /cards/{id}/move {targetColumnId, position}`. Column reorder body is `ordered_ids`, canonical is `items[{id, position}]`. No `GET /cards`, `GET /boards/{id}/columns`, `POST /auth/logout`, `GET /auth/me`. | This design keeps the implemented contract |
+| `structure.md` 5                 | No `features/`, no `lib/api/`, `AuthContext` in `context/`                                                                                                                                                                                                                                           | V-018                                      |
+| `structure.md` 6.1, `backend.md` | `schema.py` instead of `schemas.py`                                                                                                                                                                                                                                                                  | V-022                                      |
+| `structure.md` 7                 | e2e has no Page Objects                                                                                                                                                                                                                                                                              | V-026, E1                                  |
+| `security.md` 3.2                | Password hash algorithm                                                                                                                                                                                                                                                                              | V-013, P7                                  |
+| `security.md` 10, 11             | No security headers, no rate limiting                                                                                                                                                                                                                                                                | V-011, P5, P3                              |
+| `database.md`                    | No unique index for board name per user                                                                                                                                                                                                                                                              | R12.5, B9                                  |
+
+## 16. Responses to the earlier review
+
+Not applicable. This is the first version of the Kanban design, not a revision after a design review.
