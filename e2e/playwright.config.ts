@@ -1,61 +1,50 @@
 import { defineConfig, devices } from "@playwright/test";
-import dotenv from "dotenv";
-dotenv.config({ path: ".env.test" });
+import { BASE_URL } from "./utils/env";
 
 /**
- * Playwright configuration.
+ * Playwright configuration (the only one in the repo).
  *
- * Project structure:
- *   setup    — runs auth.setup.ts once to log in and persist storageState
- *   chromium — runs all spec files using the saved auth state
+ * The suite runs against LOCAL servers. Start Flask and Next yourself, then:
+ *   npx playwright test -c ../e2e/playwright.config.ts      (from frontend/)
  *
- * Docs: https://playwright.dev/docs/test-configuration
+ * Environment:
+ *   E2E_BASE_URL     frontend URL, default http://localhost:3000
+ *   E2E_API_URL      backend URL,  default http://localhost:5000
+ *   E2E_ALLOW_REMOTE set to 1 to allow a non-localhost URL (off by default)
+ *
+ * Auth model: the access token lives in memory only, so there is no
+ * storageState. Each test registers its own user through the API and logs in
+ * through the UI (see fixtures/auth.fixture.ts).
  */
+
+
 export default defineConfig({
   testDir: "./tests",
-  /* Note: tests moved from frontend/tests/ to e2e/tests/ during repo restructure */
-  /* Fail fast in CI; allow parallel locally. */
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,
-
   reporter: [["html", { open: "never" }], ["list"]],
 
   use: {
-    baseURL: "http://localhost:3000",
-    trace: "on-first-retry",
+    baseURL: BASE_URL,
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
 
   projects: [
-    // ---- Authentication setup ------------------------------------------------
-    // Runs auth.setup.ts once before any test project that depends on it.
-    // Saves browser storage state (cookies + localStorage) to a file so
-    // authenticated tests can reuse it without logging in on every test.
-    // Setup file location: fixtures/auth.setup.ts
-    {
-      name: "setup",
-      testMatch: /.*\.setup\.ts/,
-    },
-
-    // ---- Chromium (authenticated tests) -------------------------------------
-    // Depends on setup finishing first.  Every test in this project starts
-    // with the browser pre-authenticated via storageState.
     {
       name: "chromium",
+      testIgnore: /mobile\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "mobile",
+      testMatch: /mobile\.spec\.ts/,
       use: {
-        ...devices["Desktop Chrome"],
-        storageState: "playwright/.auth/user.json",
+        ...devices["Pixel 5"],
+        viewport: { width: 375, height: 812 },
       },
-      dependencies: ["setup"],
     },
   ],
-
-  /* Start the Next.js dev server automatically when running tests. */
-  webServer: {
-    command: "npm run dev",
-    url: "http://localhost:3000",
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
 });
