@@ -1,15 +1,17 @@
 "use client";
 
-import { type FormEvent, useId, useState } from "react";
+import { type FormEvent, useEffect, useId, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { updateProfile as updateProfileRequest } from "@/lib/services/usersService";
 import { ApiError } from "@/lib/errors";
 import type { User } from "@/lib/types/api";
-import { BaseBadge } from "@/components/shared/BaseBadge";
 import { BaseButton } from "@/components/shared/BaseButton";
+import { getInitials } from "@/lib/initials";
 
 const MAX_NAME_LENGTH = 255;
+/** Show the polite remaining-characters message only this close to the limit. */
+const NAME_WARN_THRESHOLD = 235;
 
 /** IANA zone names from the browser, with the current value and UTC included. */
 function timezoneOptions(current: string): string[] {
@@ -28,12 +30,37 @@ interface FieldErrors {
 function ProfileForm({ user, token }: { user: User; token: string }) {
   const { updateProfile } = useAuth();
   const baseId = useId();
+  const [saved, setSaved] = useState({
+    name: (user.name ?? "").trim(),
+    timezone: user.timezone,
+  });
   const [name, setName] = useState(user.name ?? "");
   const [timezone, setTimezone] = useState(user.timezone);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [status, setStatus] = useState("");
+
+  const isDirty = name.trim() !== saved.name || timezone !== saved.timezone;
+
+  // Guard tab close/reload only while there are unsaved changes.
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
+
+  function handleReset() {
+    setName(saved.name);
+    setTimezone(saved.timezone);
+    setFieldErrors({});
+    setSubmitError(null);
+    setStatus("");
+  }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -57,6 +84,9 @@ function ProfileForm({ user, token }: { user: User; token: string }) {
         timezone,
       });
       updateProfile({ name: updated.name, timezone: updated.timezone });
+      setSaved({ name: (updated.name ?? "").trim(), timezone: updated.timezone });
+      setName(updated.name ?? "");
+      setTimezone(updated.timezone);
       setStatus("Profile saved successfully.");
     } catch (err: unknown) {
       // Typed values stay in the inputs.
@@ -91,6 +121,21 @@ function ProfileForm({ user, token }: { user: User; token: string }) {
         {status}
       </p>
 
+      <div className="flex items-center gap-4">
+        <div
+          aria-hidden="true"
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary text-base font-semibold text-primary-foreground"
+        >
+          {getInitials(user.name, user.email)}
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-base font-medium text-foreground">
+            {user.name?.trim() || user.email}
+          </p>
+          <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-1.5">
         <span className="text-sm font-medium text-muted-foreground">User ID</span>
         <p className="truncate font-mono text-sm text-foreground">{user.id}</p>
@@ -112,9 +157,21 @@ function ProfileForm({ user, token }: { user: User; token: string }) {
             setFieldErrors((f) => ({ ...f, name: undefined }));
           }}
           aria-invalid={fieldErrors.name !== undefined}
-          aria-describedby={fieldErrors.name ? `${baseId}-name-error` : undefined}
+          aria-describedby={
+            fieldErrors.name
+              ? `${baseId}-name-count ${baseId}-name-error`
+              : `${baseId}-name-count`
+          }
           className={`${inputClasses} ${fieldErrors.name ? "border-destructive" : "border-border"}`}
         />
+        <p id={`${baseId}-name-count`} className="text-xs text-muted-foreground">
+          {name.length} / {MAX_NAME_LENGTH}
+        </p>
+        {name.length >= NAME_WARN_THRESHOLD && (
+          <p role="status" className="sr-only">
+            {Math.max(MAX_NAME_LENGTH - name.length, 0)} characters remaining
+          </p>
+        )}
         {fieldErrors.name && (
           <p id={`${baseId}-name-error`} role="alert" className="text-xs text-destructive">
             {fieldErrors.name}
@@ -172,15 +229,26 @@ function ProfileForm({ user, token }: { user: User; token: string }) {
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-muted-foreground">Role</span>
-        <BaseBadge className="w-fit capitalize">{user.role}</BaseBadge>
-      </div>
-
-      <div className="pt-2">
-        <BaseButton type="submit" disabled={isSubmitting}>
+      <div className="flex flex-wrap items-center gap-3 pt-2">
+        <BaseButton
+          type="submit"
+          disabled={isSubmitting || !isDirty}
+          aria-describedby={!isDirty ? `${baseId}-save-help` : undefined}
+        >
           {isSubmitting ? "Saving…" : "Save changes"}
         </BaseButton>
+        <BaseButton
+          variant="secondary"
+          disabled={isSubmitting || !isDirty}
+          onClick={handleReset}
+        >
+          Reset
+        </BaseButton>
+        {!isDirty && (
+          <p id={`${baseId}-save-help`} className="text-xs text-muted-foreground">
+            No changes to save
+          </p>
+        )}
       </div>
     </form>
   );
