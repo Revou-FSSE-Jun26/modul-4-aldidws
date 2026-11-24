@@ -12,6 +12,7 @@ This changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 ### Changed
 
 - Specifications rewritten for the Kanban product (see Refinement 1, 2026-11-24). Documentation only.
+- Kanban UI built on the backend (board read, card list and search, notifications producer, card soft delete, column delete 409) and the frontend (create board, columns, cards, drag and drop, card dialog with comments, search, bell, My Tasks, Profile, header). Decisions D6, D8 and D13 changed (Refinements 2 to 6). Not committed yet.
 
 ---
 
@@ -285,11 +286,11 @@ The specifications described a Task and Project application (tasks with status, 
 
 **Before (`specs/*.md` in the working tree at commit `339dfe3`, counted before the rewrite):**
 
-| File | Lines | Content |
-|---|---:|---|
-| `requirements.md` | 444 | 12 requirements, 107 acceptance criteria: Task create, view, edit, delete, status and priority, Project organization, filter and search, sorting, persistence, API, activity tracking. Admin role. Render as backend host. |
-| `design.md` | 698 | Task-based components and data models, 19 correctness properties (for example "Project deletion unassigns tasks atomically", "Overdue filter correctness"). |
-| `tasks.md` | 390 | 42 top-level tasks for the Task/Project app. |
+| File              | Lines | Content                                                                                                                                                                                                                    |
+| ----------------- | ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `requirements.md` |   444 | 12 requirements, 107 acceptance criteria: Task create, view, edit, delete, status and priority, Project organization, filter and search, sorting, persistence, API, activity tracking. Admin role. Render as backend host. |
+| `design.md`       |   698 | Task-based components and data models, 19 correctness properties (for example "Project deletion unassigns tasks atomically", "Overdue filter correctness").                                                                |
+| `tasks.md`        |   390 | 42 top-level tasks for the Task/Project app.                                                                                                                                                                               |
 
 Examples of statements that did not match the code:
 
@@ -300,29 +301,29 @@ Examples of statements that did not match the code:
 
 **After (this refinement):**
 
-| File | Lines | Content |
-|---|---:|---|
-| `requirements.md` | 395 | 14 requirements (R1 to R14) with 101 numbered acceptance criteria, plus 26 numbered non-functional criteria (N1 to N6). Each criterion is tagged `[Done]` (42), `[BE]` (23) or `[Plan]` (62). Section 12 lists 13 open decisions (D1 to D13). |
-| `design.md` | 486 | System overview, data model as implemented, a table of 25 routes with real field names, the extra URLs created by double blueprint registration, frontend pages and components with their status, data flows (board read, create, move, delete, session), contract mismatches with the chosen resolution, error handling and validation tables, an invariant ownership table, security notes, and traceability tables from every criterion to routes, pages and tests. |
-| `tasks.md` | 295 | 36 tasks (T0, B1 to B12, F1 to F13, C1, E1, X1, P1 to P7) with size, dependencies, requirement references and tests, and a coverage table for every route and page. |
+| File              | Lines | Content                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------- | ----: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `requirements.md` |   395 | 14 requirements (R1 to R14) with 101 numbered acceptance criteria, plus 26 numbered non-functional criteria (N1 to N6). Each criterion is tagged `[Done]` (42), `[BE]` (23) or `[Plan]` (62). Section 12 lists 13 open decisions (D1 to D13).                                                                                                                                                                                                                          |
+| `design.md`       |   486 | System overview, data model as implemented, a table of 25 routes with real field names, the extra URLs created by double blueprint registration, frontend pages and components with their status, data flows (board read, create, move, delete, session), contract mismatches with the chosen resolution, error handling and validation tables, an invariant ownership table, security notes, and traceability tables from every criterion to routes, pages and tests. |
+| `tasks.md`        |   295 | 36 tasks (T0, B1 to B12, F1 to F13, C1, E1, X1, P1 to P7) with size, dependencies, requirement references and tests, and a coverage table for every route and page.                                                                                                                                                                                                                                                                                                    |
 
 Counts for "After" were taken from the files after the rewrite. Counts for "Before" were taken from the files before it.
 
 **Old requirement to new requirement:**
 
-| Old | New |
-|---|---|
-| R1 Authentication | R1, R9 (session limits) |
-| R2, R4, R5 Create, edit, delete Task | R4 Cards |
-| R3 View Tasks | R2.3, R2.5 (board list and board read) |
-| R6 Status and priority | Removed. The column is the status (D9). |
-| R7 Projects | R2 Boards, R3 Columns |
-| R8 Filter and search | R8 Search (title and description, one board) |
-| R9 Sorting | Removed (D9) |
-| R10 Persistence | R12 |
-| R11 API and errors | R10 |
-| R12 Activity tracking | Removed (D12) |
-| none | R5 Move and reorder, R6 Comments, R7 Profile, R11 Authorization, R13 Analytics, R14 Notifications |
+| Old                                  | New                                                                                               |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| R1 Authentication                    | R1, R9 (session limits)                                                                           |
+| R2, R4, R5 Create, edit, delete Task | R4 Cards                                                                                          |
+| R3 View Tasks                        | R2.3, R2.5 (board list and board read)                                                            |
+| R6 Status and priority               | Removed. The column is the status (D9).                                                           |
+| R7 Projects                          | R2 Boards, R3 Columns                                                                             |
+| R8 Filter and search                 | R8 Search (title and description, one board)                                                      |
+| R9 Sorting                           | Removed (D9)                                                                                      |
+| R10 Persistence                      | R12                                                                                               |
+| R11 API and errors                   | R10                                                                                               |
+| R12 Activity tracking                | Removed (D12)                                                                                     |
+| none                                 | R5 Move and reorder, R6 Comments, R7 Profile, R11 Authorization, R13 Analytics, R14 Notifications |
 
 **Evidence used:**
 
@@ -342,21 +343,21 @@ Counts for "After" were taken from the files after the rewrite. Counts for "Befo
 
 **Open decisions recorded (defaults chosen, awaiting confirmation):**
 
-| ID | Default |
-|---|---|
-| D1 | Deleting a board deletes its columns and cards, with confirmation. Whether that is soft or hard is still open because the code hard-deletes. |
-| D2 | One board read returns columns and cards. |
-| D3 | Deleting a column with cards returns 409. |
-| D4 | Token in memory. A reload requires login. Refresh and logout planned, not MVP. |
-| D5 | Name and timezone editable. Email read-only. |
-| D6 | Notifications out of MVP scope. |
-| D7 | Card delete is a soft delete (a change from current code). |
-| D8 | My Tasks and assignee out of scope. |
-| D9 | Search on title and description within one board. No priority, status, due date, labels. |
-| D10 | Target prefix `/api/v1`. Current split documented. |
-| D11 | Analytics backend only. Comments in scope. |
-| D12 | Activity log out of scope. |
-| D13 | Search runs in the browser (added by this refinement). |
+| ID  | Default                                                                                                                                      |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Deleting a board deletes its columns and cards, with confirmation. Whether that is soft or hard is still open because the code hard-deletes. |
+| D2  | One board read returns columns and cards.                                                                                                    |
+| D3  | Deleting a column with cards returns 409.                                                                                                    |
+| D4  | Token in memory. A reload requires login. Refresh and logout planned, not MVP.                                                               |
+| D5  | Name and timezone editable. Email read-only.                                                                                                 |
+| D6  | Notifications out of MVP scope.                                                                                                              |
+| D7  | Card delete is a soft delete (a change from current code).                                                                                   |
+| D8  | My Tasks and assignee out of scope.                                                                                                          |
+| D9  | Search on title and description within one board. No priority, status, due date, labels.                                                     |
+| D10 | Target prefix `/api/v1`. Current split documented.                                                                                           |
+| D11 | Analytics backend only. Comments in scope.                                                                                                   |
+| D12 | Activity log out of scope.                                                                                                                   |
+| D13 | Search runs in the browser (added by this refinement).                                                                                       |
 
 **Scope and limits of this change:**
 
@@ -364,6 +365,60 @@ Counts for "After" were taken from the files after the rewrite. Counts for "Befo
 - No tests, build or server were run. Statements about behaviour come from reading the code.
 - `.kiro/specs/` holds an older duplicate spec set (V-028). It was not edited. `specs/` is the authoritative copy.
 - `docs/reports/guideline-violations.md` was not changed. Candidate new entries are listed in task X1.
+
+---
+
+Refinements 2 to 6 come from building the Kanban UI (2026-11-24). They are in the working tree and not committed. Each one is a short note added to `requirements.md` section 12.1, `design.md` sections 5.2.1 and 6.3, and `tasks.md`; the original text was kept so the earlier decision stays visible.
+
+### Refinement 2: Notifications moved into scope (D6)
+
+**Context:** the assessment requires a notification bell that shows the number of unread comments. Under D6 nothing created notifications and the bell was not mounted, so the count was always zero.
+
+**Before:** D6 "Out of MVP. Backend routes kept. No UI." Task F13 "no change". R14 "Backend only, no producer, no MVP UI". Design route 23 returned `meta {page, per_page, total}`.
+
+**After:** posting a comment creates one notification for the board owner in the same commit (the owner is notified on their own comments too, because a board has one owner). Route 23 adds `meta.unread_count`. `NotificationBell` is mounted in the new `Header` and marks a notification read through `PATCH /api/notifications/{id}/read`.
+
+**Evidence:** `backend/app/blueprints/notifications/service.py` (`notify_comment_added`), `comments/service.py` (call in `create_comment`), `notifications/routes.py` (`unread_count`), `backend/tests/api/test_notification_routes.py`, `frontend/components/shared/__tests__/NotificationBell.test.tsx`, local Playwright journey (bell shows 2 then 1 after marking one read).
+
+### Refinement 3: My Tasks kept instead of removed (D8)
+
+**Context:** the assessment lists My Tasks among the pages that must load and use `BaseButton`. Task F12 planned to delete the page.
+
+**Before:** D8 "Out of MVP. The `/my-tasks` page is removed (task F12)." `MyTasksList` called `GET /api/cards?assignee=me`, which does not exist.
+
+**After:** `/my-tasks` lists the cards the caller created, grouped by board, with links and "Load more", through `GET /api/v1/cards?mine=true`. Real errors are shown instead of an empty list. There is still no assignee field.
+
+**Evidence:** `frontend/components/board/MyTasksList.tsx`, `frontend/components/board/__tests__/MyTasksList.test.tsx`, `backend/tests/api/test_card_list_routes.py` (`mine` filter).
+
+### Refinement 4: Search moved to the backend with a new card list route (D13)
+
+**Context:** the assessment requires that search finds cards. D13 chose a browser-side filter; one list route serves both search and My Tasks with less frontend code.
+
+**Before:** D13 "In the browser over the loaded board (no new endpoint)." The design route table had 25 routes and no card list. `useCardSearch` called `GET /api/cards`, which does not exist.
+
+**After:** new route `GET /api/v1/cards` with `search` (1 to 100 characters, case-insensitive over title and description, `%` and `_` literal), `board_id`, `mine`, `page`, `per_page` (1 to 100). Only the caller's boards are searched; unknown query keys return 400. The board page search box uses it with `board_id`.
+
+**Evidence:** `backend/app/blueprints/cards/{routes,schema,service}.py`, `backend/tests/api/test_card_list_routes.py`, `frontend/hooks/useCardSearch.ts`, `frontend/components/board/__tests__/SearchBar.test.tsx`.
+
+### Refinement 5: Comment author name and login user name
+
+**Context:** the card dialog showed the author's UUID, and the header needs the user's name right after login.
+
+**Before:** comment object `id, card_id, author_id, body, created_at, updated_at`. Login `user {id, email, role, timezone}`. R6.7 planned to show "You" based on `author_id`.
+
+**After:** comment object adds `author_name` (name, else the part of the email before `@`). Login `user` adds `name`. Both are additive fields.
+
+**Evidence:** `backend/app/blueprints/comments/schema.py`, `backend/app/blueprints/auth/routes.py`, `backend/tests/test_comments.py`, `backend/tests/api/test_auth_routes.py`.
+
+### Refinement 6: Planned backend changes D2, D3, D7 and R5.10 built
+
+**Context:** the board page needs one read, and the decisions D2, D3 and D7 were tagged Planned.
+
+**Before:** route 6 returned the board only ("Planned change"); route 11 deleted a column with its cards; route 15 removed the card row; ties in a move were broken by `created_at`, so a drop at the top could land second.
+
+**After:** route 6 returns `columns[].cards[]` (3 SQL queries); route 11 returns 409 `RESOURCE_CONFLICT` while live cards exist; route 15 sets `deleted_at` and every card read filters it; a moved card wins an `order` tie. The cross-board move check (part of B5) was not built.
+
+**Evidence:** `backend/tests/api/test_board_routes.py`, `test_column_routes.py`, `test_card_routes.py`. Full backend run: 168 passed (pytest, local test database).
 
 ---
 
