@@ -196,6 +196,8 @@ Status: backend Done. UI sends a wrong payload.
 - **R7.4** WHEN `/profile` opens, THE frontend SHALL load the profile from `GET /api/users/me` and SHALL send only `name` and `timezone` on save. `[Plan]`
 - **R7.5** IF saving fails, THEN THE frontend SHALL show the error and keep the form values. `[Plan]`
 
+Note (profile UX, Done): the profile page no longer shows the role. It disables Save and Reset while nothing differs from the saved values, warns on tab close or reload while there are unsaved changes (in-app navigation is not guarded), offers Reset, shows a name character counter and shows an initials avatar next to the name and email.
+
 ### Requirement 8: Search
 
 **User story:** As a Member, I want to find cards on a board by text, so that I can locate work quickly.

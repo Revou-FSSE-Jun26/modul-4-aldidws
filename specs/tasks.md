@@ -162,6 +162,7 @@ A task is done only when:
   - Refs: R7.1 to R7.5. Routes: 21, 22. Page: `/profile`.
   - Change: load `GET /api/users/me` on open. Show email as read-only text. Edit `name` and `timezone`. Send `{name, timezone}` through the users service (no raw `fetch`). Update `AuthContext` user state after save. Remove the stale "not yet implemented" comment.
   - Tests: `app/profile/__tests__/page.test.tsx` (new): body has `name` and `timezone` and no `email`; 400 shown; values kept on error.
+  - [x] Profile UX (frontend only): unsaved-changes handling (Save disabled when clean, `beforeunload` while dirty), Reset button with name character counter, initials avatar (`lib/initials.ts`). Refs: R7.4, R7.5. Tests: `app/profile/__tests__/page.test.tsx`, `lib/__tests__/initials.test.ts`.
 
 - [ ] **F11. Search** (S). Depends: F4, T0 (D9, D13).
   - Refs: R8.1 to R8.6. No route (client side).
