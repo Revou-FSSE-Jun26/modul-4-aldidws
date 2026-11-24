@@ -34,12 +34,18 @@ from werkzeug.security import generate_password_hash
 # dotted-path string without requiring a file on disk.
 # ---------------------------------------------------------------------------
 
+# Password-free default. Put the real credentials in TEST_DATABASE_URL (or in
+# PGPASSWORD / a pgpass file); never commit them here.
+_DEFAULT_TEST_DATABASE_URL = "postgresql://postgres@localhost:5432/revotask_test"
+
+
+def _test_database_url() -> str:
+    return os.environ.get("TEST_DATABASE_URL", _DEFAULT_TEST_DATABASE_URL)
+
+
 class _TestConfig:
     TESTING = True
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "TEST_DATABASE_URL",
-        "postgresql://postgres:aldi17@localhost:5432/revotask_test",
-    )
+    SQLALCHEMY_DATABASE_URI = _test_database_url()
     JWT_SECRET_KEY = "test-secret-key-for-tests-only"
     WTF_CSRF_ENABLED = False
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -57,11 +63,7 @@ sys.modules["_test_config"] = _mod
 @pytest.fixture(scope="session")
 def engine():
     """Create the SQLAlchemy engine pointing at the test database."""
-    url = os.environ.get(
-        "TEST_DATABASE_URL",
-        "postgresql://postgres:aldi17@localhost:5432/revotask_test",
-    )
-    return create_engine(url)
+    return create_engine(_test_database_url())
 
 
 @pytest.fixture(scope="session")

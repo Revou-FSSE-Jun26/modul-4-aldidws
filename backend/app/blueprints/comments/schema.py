@@ -34,12 +34,21 @@ class UpdateCommentSchema(Schema):
         return result
 
 
+def _author_name(comment: CardComment) -> str:
+    """Return the author's name, or the part of their email before ``@``."""
+    author = comment.author
+    if author.name:
+        return author.name
+    return author.email.split("@", 1)[0]
+
+
 def comment_to_dict(comment: CardComment) -> dict:
     """Serialise a CardComment to a safe, API-facing dictionary."""
     return {
         "id": str(comment.id),
         "card_id": str(comment.card_id),
         "author_id": str(comment.author_id),
+        "author_name": _author_name(comment),
         "body": comment.body,
         "created_at": comment.created_at.isoformat(),
         "updated_at": comment.updated_at.isoformat(),

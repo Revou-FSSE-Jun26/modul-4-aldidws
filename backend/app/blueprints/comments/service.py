@@ -11,6 +11,9 @@ Contains the business logic for comment operations.  Every function here MUST:
 import uuid
 
 from app.common.exceptions import CardNotFoundException, CommentNotFoundException, UnauthorizedCommentAccessError
+from sqlalchemy.orm import selectinload
+
+from app.blueprints.notifications.service import notify_comment_added
 from app.extensions import db
 from app.models.board import Board
 from app.models.board_column import BoardColumn
@@ -35,6 +38,7 @@ def _get_card_for_user(current_user, card_id: uuid.UUID) -> Card:
         .join(BoardColumn.board)
         .where(Card.id == card_id)
         .where(Board.owner_id == current_user.id)
+        .where(Card.deleted_at.is_(None))
     ).scalar_one_or_none()
 
     if card is None:
@@ -63,7 +67,7 @@ def create_comment(current_user, card_id: uuid.UUID, data: dict) -> CardComment:
         CardNotFoundException: When the card does not exist or its board is
             not owned by *current_user*.
     """
-    _get_card_for_user(current_user, card_id)
+    card = _get_card_for_user(current_user, card_id)
 
     comment = CardComment(
         card_id=card_id,
@@ -73,11 +77,14 @@ def create_comment(current_user, card_id: uuid.UUID, data: dict) -> CardComment:
 
     try:
         db.session.add(comment)
+        # The ownership join above guarantees the board owner is current_user.
+        notify_comment_added(current_user.id, card, comment, current_user)
         db.session.commit()
     except Exception:
         db.session.rollback()
         raise
 
+    db.session.refresh(comment)
     return comment
 
 
@@ -100,6 +107,7 @@ def list_comments(current_user, card_id: uuid.UUID) -> list[CardComment]:
     comments = db.session.execute(
         db.select(CardComment)
         .where(CardComment.card_id == card_id)
+        .options(selectinload(CardComment.author))
         .order_by(CardComment.created_at.asc())
     ).scalars().all()
 

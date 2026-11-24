@@ -7,7 +7,12 @@ from flask import jsonify, request
 from app.blueprints.auth.decorators import token_required
 from app.blueprints.boards import boards_bp
 from app.blueprints.boards import service
-from app.blueprints.boards.schema import CreateBoardSchema, UpdateBoardSchema, board_to_dict
+from app.blueprints.boards.schema import (
+    CreateBoardSchema,
+    UpdateBoardSchema,
+    board_detail_to_dict,
+    board_to_dict,
+)
 
 
 @boards_bp.route("", methods=["POST"])
@@ -78,7 +83,7 @@ def list_boards(current_user):
 @boards_bp.route("/<board_id>", methods=["GET"])
 @token_required
 def get_board(current_user, board_id):
-    """Retrieve a single board by ID.
+    """Retrieve a board with its columns (by position) and live cards (by order).
     ---
     tags:
       - Boards
@@ -104,8 +109,10 @@ def get_board(current_user, board_id):
       404:
         description: Board not found.
     """
-    board = service.get_board(current_user, uuid.UUID(board_id))
-    return jsonify({"data": board_to_dict(board)}), 200
+    board, columns, cards_by_column = service.get_board_detail(
+        current_user, uuid.UUID(board_id)
+    )
+    return jsonify({"data": board_detail_to_dict(board, columns, cards_by_column)}), 200
 
 
 @boards_bp.route("/<board_id>", methods=["PATCH"])

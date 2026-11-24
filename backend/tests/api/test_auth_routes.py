@@ -104,3 +104,20 @@ def test_register_weak_password_returns_400(client, password):
 
     assert response.status_code == 400
     assert "password" in response.get_json()["error"]["details"]
+
+
+_LOGIN_URL = '/api/auth/login'
+
+
+def test_login_response_user_includes_name(client):
+    client.post(_URL, json=_payload())
+
+    response = client.post(
+        _LOGIN_URL, json={'email': 'alice@example.com', 'password': 'TestPass1'}
+    )
+
+    assert response.status_code == 200
+    user = response.get_json()['data']['user']
+    assert user['name'] == 'Alice Example'
+    assert set(user) == {'id', 'email', 'name', 'role', 'timezone'}
+

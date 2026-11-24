@@ -8,10 +8,12 @@ from app.blueprints.auth.decorators import token_required
 from app.blueprints.cards import cards_bp
 from app.blueprints.cards import service
 from app.blueprints.cards.schema import (
+    CardListQuerySchema,
     CardPositionSchema,
     CreateCardSchema,
     UpdateCardSchema,
     card_to_dict,
+    card_with_context_to_dict,
 )
 
 
@@ -76,6 +78,90 @@ def create_card(current_user, column_id):
     return jsonify({"data": card_to_dict(card)}), 201
 
 
+@cards_bp.route("", methods=["GET"])
+@token_required
+def list_cards(current_user):
+    """List live cards on boards owned by the caller, with search.
+    ---
+    tags:
+      - Cards
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: search
+        in: query
+        schema:
+          type: string
+          maxLength: 100
+        description: Case-insensitive partial match on title or description.
+      - name: board_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: mine
+        in: query
+        schema:
+          type: boolean
+          default: false
+        description: When true, only cards created by the caller.
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: per_page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+    responses:
+      200:
+        description: Cards (with board_id, board_name, column_name) and meta.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data:
+                  type: array
+                  items:
+                    type: object
+                meta:
+                  type: object
+                  properties:
+                    page:
+                      type: integer
+                    per_page:
+                      type: integer
+                    total:
+                      type: integer
+      400:
+        description: Invalid or unknown query parameter.
+      401:
+        description: Authentication required.
+    """
+    args = request.args
+    params = {}
+    for key in args.keys():
+        values = args.getlist(key)
+        # A repeated key is ambiguous; send a list so the schema rejects it.
+        params[key] = values[0] if len(values) == 1 else values
+    filters = CardListQuerySchema().load(params)
+    rows, total = service.list_cards(current_user, filters)
+    return jsonify({
+        "data": [card_with_context_to_dict(r) for r in rows],
+        "meta": {
+            "page": filters["page"],
+            "per_page": filters["per_page"],
+            "total": total,
+        },
+    }), 200
+
+
 # ---------------------------------------------------------------------------
 # Card-level routes
 # Registered at /api/v1/cards/<card_id> via the primary cards_bp registration.
@@ -132,7 +218,7 @@ def update_card(current_user, card_id):
 @cards_bp.route("/<card_id>", methods=["DELETE"])
 @token_required
 def delete_card(current_user, card_id):
-    """Delete a card.
+    """Soft-delete a card (sets deleted_at; hidden from all reads).
     ---
     tags:
       - Cards

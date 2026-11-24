@@ -63,6 +63,19 @@ class CardPositionSchema(Schema):
     order = fields.Float(required=True, validate=validate.Range(min=0))
 
 
+class CardListQuerySchema(Schema):
+    """Query parameters for GET /api/v1/cards. Unknown keys are rejected."""
+
+    search = fields.String(
+        required=False,
+        validate=validate.Length(min=1, max=100),
+    )
+    board_id = fields.UUID(required=False)
+    mine = fields.Boolean(load_default=False)
+    page = fields.Integer(load_default=1, validate=validate.Range(min=1))
+    per_page = fields.Integer(load_default=20, validate=validate.Range(min=1, max=100))
+
+
 def card_to_dict(card: Card) -> dict:
     """Serialise a Card to a safe, API-facing dictionary.
 
@@ -80,3 +93,13 @@ def card_to_dict(card: Card) -> dict:
         "created_at": card.created_at.isoformat(),
         "updated_at": card.updated_at.isoformat(),
     }
+
+
+def card_with_context_to_dict(row) -> dict:
+    """Serialise a ``(Card, column_name, board_id, board_name)`` row."""
+    card, column_name, board_id, board_name = row
+    data = card_to_dict(card)
+    data["board_id"] = str(board_id)
+    data["board_name"] = board_name
+    data["column_name"] = column_name
+    return data

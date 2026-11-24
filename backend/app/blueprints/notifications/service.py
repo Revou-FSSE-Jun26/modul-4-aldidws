@@ -37,6 +37,41 @@ def list_notifications(current_user, page: int = 1, per_page: int = 20):
     return items, total
 
 
+def count_unread(current_user) -> int:
+    """Return how many notifications *current_user* has not read."""
+    return db.session.execute(
+        db.select(db.func.count(Notification.id))
+        .where(Notification.user_id == current_user.id)
+        .where(Notification.is_read.is_(False))
+    ).scalar() or 0
+
+
+def _notification_recipients(board_owner_id: uuid.UUID, author_id: uuid.UUID) -> list[uuid.UUID]:
+    """Return the user ids to notify about a new comment.
+
+    Boards have a single owner today, so the owner is notified on every
+    comment, including their own. Narrow this to exclude *author_id* once
+    boards can be shared.
+    """
+    return [board_owner_id]
+
+
+def notify_comment_added(board_owner_id: uuid.UUID, card, comment, author) -> None:
+    """Stage a notification for each recipient of a new comment.
+
+    Does NOT commit; the caller owns the transaction so the comment and its
+    notification are saved together.
+    """
+    for user_id in _notification_recipients(board_owner_id, author.id):
+        db.session.add(
+            Notification(
+                user_id=user_id,
+                title=f"New comment on {card.title[:200]}",
+                body=comment.body[:500],
+            )
+        )
+
+
 def mark_read(current_user, notification_id: uuid.UUID) -> Notification:
     """Mark a notification as read.
 

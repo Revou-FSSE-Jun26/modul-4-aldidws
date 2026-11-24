@@ -12,10 +12,15 @@ import uuid
 
 from sqlalchemy import func
 
-from app.common.exceptions import BoardNotFoundException, ColumnNotFoundException
+from app.common.exceptions import (
+    BoardNotFoundException,
+    ColumnNotFoundException,
+    ResourceConflictException,
+)
 from app.extensions import db
 from app.models.board import Board
 from app.models.board_column import BoardColumn
+from app.models.card import Card
 
 
 # ---------------------------------------------------------------------------
@@ -170,9 +175,21 @@ def delete_column(current_user, column_id: uuid.UUID) -> None:
     Raises:
         ColumnNotFoundException: When the column does not exist or its board
             is not owned by *current_user*.
+        ResourceConflictException: When the column still has non-deleted cards.
     """
     col = _get_owned_column(column_id, current_user)
     board_id = col.board_id
+
+    live_cards = db.session.execute(
+        db.select(func.count(Card.id)).where(
+            Card.column_id == col.id,
+            Card.deleted_at.is_(None),
+        )
+    ).scalar() or 0
+    if live_cards > 0:
+        raise ResourceConflictException(
+            message="This column still has cards. Move or delete them first."
+        )
 
     try:
         db.session.delete(col)

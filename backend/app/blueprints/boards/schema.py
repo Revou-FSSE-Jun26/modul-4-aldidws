@@ -2,6 +2,8 @@
 
 from marshmallow import Schema, fields, validate
 
+from app.blueprints.cards.schema import card_to_dict
+from app.blueprints.columns.schema import column_to_dict
 from app.models.board import Board
 
 
@@ -51,3 +53,13 @@ def board_to_dict(board: Board) -> dict:
         "created_at": board.created_at.isoformat(),
         "updated_at": board.updated_at.isoformat(),
     }
+
+
+def board_detail_to_dict(board: Board, columns, cards_by_column) -> dict:
+    """Serialise a board with nested columns and their cards."""
+    data = board_to_dict(board)
+    data["columns"] = [
+        {**column_to_dict(col), "cards": [card_to_dict(c) for c in cards_by_column.get(col.id, [])]}
+        for col in columns
+    ]
+    return data

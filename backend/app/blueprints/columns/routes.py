@@ -143,6 +143,8 @@ def delete_column(current_user, column_id):
     responses:
       204:
         description: Column deleted successfully.
+      409:
+        description: Column still has cards (RESOURCE_CONFLICT).
       404:
         description: Column not found.
     """

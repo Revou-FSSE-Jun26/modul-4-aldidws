@@ -9,8 +9,9 @@ Contains the business logic for card operations.  Every function here MUST:
 """
 
 import uuid
+from datetime import datetime, timezone
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from app.common.exceptions import CardNotFoundException, ColumnNotFoundException
 from app.extensions import db
@@ -22,6 +23,11 @@ from app.models.card import Card
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+
+def _not_deleted():
+    """Shared filter that excludes soft-deleted cards."""
+    return Card.deleted_at.is_(None)
 
 
 def _get_owned_card(current_user, card_id: uuid.UUID) -> Card:
@@ -36,6 +42,7 @@ def _get_owned_card(current_user, card_id: uuid.UUID) -> Card:
         .join(BoardColumn.board)
         .where(Card.id == card_id)
         .where(Board.owner_id == current_user.id)
+        .where(_not_deleted())
     ).scalar_one_or_none()
 
     if card is None:
@@ -59,7 +66,7 @@ def _get_owned_column(current_user, column_id: uuid.UUID) -> BoardColumn:
     return col
 
 
-def _renormalise_positions(column_id: uuid.UUID) -> None:
+def _renormalise_positions(column_id: uuid.UUID, first_id: uuid.UUID | None = None) -> None:
     """Reassign 0-based contiguous order values to all cards in *column_id*.
 
     Ordered by current order first, then by creation time as a stable
@@ -68,8 +75,12 @@ def _renormalise_positions(column_id: uuid.UUID) -> None:
     cards = db.session.execute(
         db.select(Card)
         .where(Card.column_id == column_id)
+        .where(_not_deleted())
         .order_by(Card.order.asc(), Card.created_at.asc())
     ).scalars().all()
+
+    # When order values tie, the card being moved (first_id) wins.
+    cards.sort(key=lambda c: (c.order, 0 if c.id == first_id else 1))
 
     for idx, c in enumerate(cards):
         c.order = idx
@@ -98,7 +109,9 @@ def create_card(current_user, column_id: uuid.UUID, data: dict) -> Card:
     _get_owned_column(current_user, column_id)
 
     max_pos = db.session.execute(
-        db.select(func.max(Card.order)).where(Card.column_id == column_id)
+        db.select(func.max(Card.order))
+        .where(Card.column_id == column_id)
+        .where(_not_deleted())
     ).scalar()
 
     order = 0.0 if max_pos is None else max_pos + 1.0
@@ -158,7 +171,7 @@ def update_card(current_user, card_id: uuid.UUID, data: dict) -> Card:
 
 
 def delete_card(current_user, card_id: uuid.UUID) -> None:
-    """Delete a card owned by *current_user*.
+    """Soft-delete a card owned by *current_user* (sets ``deleted_at``).
 
     Args:
         current_user: The authenticated user requesting the deletion.
@@ -171,7 +184,7 @@ def delete_card(current_user, card_id: uuid.UUID) -> None:
     card = _get_owned_card(current_user, card_id)
 
     try:
-        db.session.delete(card)
+        card.deleted_at = datetime.now(timezone.utc)
         db.session.commit()
     except Exception:
         db.session.rollback()
@@ -219,7 +232,7 @@ def move_card(
     # Flush so the ORM reflects the new column before renormalisation queries.
     db.session.flush()
 
-    _renormalise_positions(column_id)
+    _renormalise_positions(column_id, first_id=card.id)
 
     if old_column_id != column_id:
         _renormalise_positions(old_column_id)
@@ -234,3 +247,58 @@ def move_card(
     db.session.refresh(card)
 
     return card
+
+
+def list_cards(current_user, filters: dict):
+    """Return a page of live cards on boards owned by *current_user*.
+
+    Args:
+        current_user: The authenticated user.
+        filters: Validated data from ``CardListQuerySchema`` (search, board_id,
+            mine, page, per_page).
+
+    Returns:
+        Tuple of (rows, total). Each row is a tuple of
+        (Card, column_name, board_id, board_name).
+    """
+    conditions = [Board.owner_id == current_user.id, _not_deleted()]
+
+    if filters.get("board_id") is not None:
+        conditions.append(Board.id == filters["board_id"])
+    if filters.get("mine"):
+        conditions.append(Card.owner_id == current_user.id)
+    term = filters.get("search")
+    if term:
+        conditions.append(
+            or_(
+                Card.title.icontains(term, autoescape=True),
+                Card.description.icontains(term, autoescape=True),
+            )
+        )
+
+    total = db.session.execute(
+        db.select(func.count())
+        .select_from(Card)
+        .join(Card.column)
+        .join(BoardColumn.board)
+        .where(*conditions)
+    ).scalar() or 0
+
+    page = filters.get("page", 1)
+    per_page = filters.get("per_page", 20)
+    rows = db.session.execute(
+        db.select(Card, BoardColumn.name, Board.id, Board.name)
+        .join(Card.column)
+        .join(BoardColumn.board)
+        .where(*conditions)
+        .order_by(
+            Board.name.asc(),
+            BoardColumn.position.asc(),
+            Card.order.asc(),
+            Card.id.asc(),
+        )
+        .limit(per_page)
+        .offset((page - 1) * per_page)
+    ).all()
+
+    return [tuple(r) for r in rows], total

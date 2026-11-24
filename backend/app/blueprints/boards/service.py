@@ -15,6 +15,8 @@ from sqlalchemy import func
 from app.common.exceptions import BoardNotFoundException, ResourceConflictException
 from app.extensions import db
 from app.models.board import Board
+from app.models.board_column import BoardColumn
+from app.models.card import Card
 from app.models.user import User
 
 
@@ -119,6 +121,43 @@ def get_board(current_user: User, board_id: uuid.UUID) -> Board:
             owned by *current_user* (non-disclosing 404).
     """
     return _get_owned_board(current_user, board_id)
+
+
+def get_board_detail(current_user: User, board_id: uuid.UUID):
+    """Return a board with its columns and live cards (three queries).
+
+    Returns:
+        Tuple ``(board, columns, cards_by_column)`` where ``cards_by_column``
+        maps column id to its non-deleted cards ordered by ``order``.
+
+    Raises:
+        BoardNotFoundException: When the board does not exist or is not owned
+            by *current_user*.
+    """
+    board = _get_owned_board(current_user, board_id)
+
+    columns = list(
+        db.session.execute(
+            db.select(BoardColumn)
+            .where(BoardColumn.board_id == board.id)
+            .order_by(BoardColumn.position.asc(), BoardColumn.created_at.asc())
+        ).scalars().all()
+    )
+
+    cards_by_column: dict = {col.id: [] for col in columns}
+    if columns:
+        cards = db.session.execute(
+            db.select(Card)
+            .where(
+                Card.column_id.in_(list(cards_by_column)),
+                Card.deleted_at.is_(None),
+            )
+            .order_by(Card.order.asc(), Card.created_at.asc(), Card.id.asc())
+        ).scalars().all()
+        for card in cards:
+            cards_by_column[card.column_id].append(card)
+
+    return board, columns, cards_by_column
 
 
 def update_board(current_user: User, board_id: uuid.UUID, data: dict) -> Board:
