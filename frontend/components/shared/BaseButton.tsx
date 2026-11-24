@@ -1,15 +1,15 @@
 "use client";
 
-import { type ButtonHTMLAttributes, type ReactNode } from "react";
+import { type ButtonHTMLAttributes } from "react";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "destructive";
+type ButtonSize = "md" | "sm" | "icon";
 
-interface BaseButtonProps {
+interface BaseButtonProps
+  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className"> {
   variant?: ButtonVariant;
-  type?: ButtonHTMLAttributes<HTMLButtonElement>["type"];
-  disabled?: boolean;
-  onClick?: () => void;
-  children: ReactNode;
+  size?: ButtonSize;
+  className?: string;
 }
 
 const variantClasses: Record<ButtonVariant, string> = {
@@ -26,26 +26,37 @@ const variantClasses: Record<ButtonVariant, string> = {
     "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500 disabled:bg-red-300",
 };
 
+// 44px minimum touch target below the `sm` breakpoint.
+const sizeClasses: Record<ButtonSize, string> = {
+  md: "min-h-11 px-4 py-2 sm:min-h-0",
+  sm: "min-h-11 px-3 py-1.5 text-xs sm:min-h-0",
+  icon: "min-h-11 min-w-11 p-2 sm:min-h-0 sm:min-w-0",
+};
+
 export function BaseButton({
   variant = "primary",
+  size = "md",
   type = "button",
-  disabled = false,
-  onClick,
+  className = "",
   children,
+  ...rest
 }: BaseButtonProps) {
   return (
     <button
+      {...rest}
       type={type}
-      disabled={disabled}
-      onClick={onClick}
       className={[
-        "inline-flex items-center justify-center rounded-md px-4 py-2",
+        "inline-flex items-center justify-center rounded-md",
         "text-sm font-medium",
         "transition-colors duration-150",
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
         "disabled:cursor-not-allowed disabled:opacity-60",
+        sizeClasses[size],
         variantClasses[variant],
-      ].join(" ")}
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       {children}
     </button>

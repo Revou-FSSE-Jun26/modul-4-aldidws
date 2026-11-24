@@ -6,19 +6,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+import { login as loginRequest } from "@/lib/services/authService";
+import type { User } from "@/lib/types/api";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export interface AuthUser {
-  id: string;
-  email: string;
-  role: string;
-  timezone: string;
-}
+export type AuthUser = User;
 
 interface AuthContextValue {
   currentUser: AuthUser | null;
@@ -28,22 +23,8 @@ interface AuthContextValue {
   isLoading: boolean;
   login(email: string, password: string): Promise<void>;
   logout(): Promise<void>;
-  updateProfile(updates: Partial<Pick<AuthUser, "email" | "timezone">>): void;
-}
-
-// ---------------------------------------------------------------------------
-// API response shapes
-// ---------------------------------------------------------------------------
-
-interface LoginResponseData {
-  access_token: string;
-  /** Returned by the backend but intentionally not stored anywhere. */
-  refresh_token?: string;
-  user: AuthUser;
-}
-
-interface ApiResponse<T> {
-  data: T;
+  /** Merges server-confirmed profile fields into the in-memory user. */
+  updateProfile(updates: Partial<Pick<AuthUser, "name" | "timezone">>): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,38 +40,16 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  // No session restore: the backend has no refresh endpoint, so nothing async
-  // runs on mount and auth is never in a loading state.
   const isLoading = false;
 
-  // -------------------------------------------------------------------------
-  // login
-  // -------------------------------------------------------------------------
   async function login(email: string, password: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // No credentials: the backend CORS config has supports_credentials=False,
-      // so a credentialed cross-origin request would be blocked by the browser.
-      body: JSON.stringify({ email, password }),
-    });
-
-    if (!response.ok) {
-      const errorBody: unknown = await response.json().catch(() => null);
-      throw errorBody instanceof Object && "error" in errorBody
-        ? errorBody
-        : new Error(`Login failed with status ${response.status}`);
-    }
-
-    const { data }: ApiResponse<LoginResponseData> = await response.json();
+    // The refresh token in the response is intentionally discarded.
+    const data = await loginRequest(email, password);
 
     setToken(data.access_token);
     setCurrentUser(data.user);
   }
 
-  // -------------------------------------------------------------------------
-  // logout
-  // -------------------------------------------------------------------------
   async function logout(): Promise<void> {
     // The backend has no logout endpoint, so this only clears client state.
     // The access token stays valid until it expires.
@@ -98,11 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCurrentUser(null);
   }
 
-  // -------------------------------------------------------------------------
-  // updateProfile — optimistic client-side merge, no API call
-  // -------------------------------------------------------------------------
   function updateProfile(
-    updates: Partial<Pick<AuthUser, "email" | "timezone">>
+    updates: Partial<Pick<AuthUser, "name" | "timezone">>
   ): void {
     if (currentUser === null) return;
     setCurrentUser({ ...currentUser, ...updates });

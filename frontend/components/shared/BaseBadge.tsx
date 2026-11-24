@@ -1,10 +1,10 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { type HTMLAttributes, type ReactNode } from "react";
 
 type BadgeVariant = "default" | "primary" | "success" | "warning" | "danger";
 
-interface BaseBadgeProps {
+interface BaseBadgeProps extends Omit<HTMLAttributes<HTMLSpanElement>, "className" | "children"> {
   variant?: BadgeVariant;
   children: ReactNode;
   className?: string;
@@ -18,9 +18,10 @@ const variantClasses: Record<BadgeVariant, string> = {
   danger:   "bg-red-100 text-red-700",
 };
 
-export function BaseBadge({ variant = "default", children, className = "" }: BaseBadgeProps) {
+export function BaseBadge({ variant = "default", children, className = "", ...rest }: BaseBadgeProps) {
   return (
     <span
+      {...rest}
       className={[
         "inline-flex items-center rounded-full px-2.5 py-0.5",
         "text-xs font-medium",

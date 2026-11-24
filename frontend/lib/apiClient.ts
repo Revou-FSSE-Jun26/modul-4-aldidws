@@ -126,6 +126,27 @@ export async function apiClient<T>(
   path: string,
   opts: ApiClientOptions = {},
 ): Promise<T> {
+  const envelope = await requestEnvelope<T, never>(path, opts);
+  return envelope.data;
+}
+
+/** Pagination metadata returned by list endpoints. */
+export interface PageMeta {
+  page: number;
+  per_page: number;
+  total: number;
+  /** Present on GET /api/notifications only. */
+  unread_count?: number;
+}
+
+/**
+ * Like `apiClient`, but returns the whole success envelope so callers can read
+ * `meta` (pagination, unread counts). Additive: `apiClient` is unchanged.
+ */
+export async function requestEnvelope<T, M = PageMeta>(
+  path: string,
+  opts: ApiClientOptions = {},
+): Promise<{ data: T; meta: M }> {
   const {
     method = "GET",
     token,
@@ -213,11 +234,11 @@ export async function apiClient<T>(
   if (response.status === 204) {
     // `void` return: cast through `never` so the generic T is satisfied when
     // callers correctly declare del<void>().
-    return void 0 as never;
+    return { data: void 0 as never, meta: undefined as never };
   }
 
-  const json = (await response.json()) as FlaskSuccessEnvelope<T>;
-  return json.data;
+  const json = (await response.json()) as FlaskSuccessEnvelope<T> & { meta?: M };
+  return { data: json.data, meta: json.meta as M };
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +248,11 @@ export async function apiClient<T>(
 /** GET /path and return typed data. */
 export function get<T>(path: string, opts: Omit<ApiClientOptions, "method" | "body"> = {}): Promise<T> {
   return apiClient<T>(path, { ...opts, method: "GET" });
+}
+
+/** GET /path and return `{ data, meta }` (pagination / unread count). */
+export function getWithMeta<T>(path: string, opts: Omit<ApiClientOptions, "method" | "body"> = {}): Promise<{ data: T; meta: PageMeta }> {
+  return requestEnvelope<T>(path, { ...opts, method: "GET" });
 }
 
 /** POST /path with a JSON body and return typed data. */

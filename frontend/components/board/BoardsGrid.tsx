@@ -1,32 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
-import { get } from "@/lib/apiClient";
+import { listBoards } from "@/lib/services/boardsService";
 import { ApiError } from "@/lib/errors";
+import { loginPath } from "@/lib/loginPath";
+import type { Board } from "@/lib/types/api";
 import { BoardCard } from "@/components/board/BoardCard";
-
-// ---------------------------------------------------------------------------
-// Domain type — mirrors the backend `board_to_dict()` serialisation
-// ---------------------------------------------------------------------------
-
-interface Board {
-  id: string;
-  name: string;
-  user_id: string;
-  created_at: string;
-  updated_at: string;
-}
+import { CreateBoardForm } from "@/components/board/CreateBoardForm";
 
 type FetchState =
   | { status: "idle" }
-  | { status: "success"; boards: Board[] }
+  | { status: "success"; boards: Board[]; focusId: string | null }
   | { status: "error"; message: string };
 
 /**
  * Fetches `GET /api/boards` with the in-memory access token from AuthContext
- * and renders a responsive grid of <BoardCard> tiles.
+ * and renders a responsive grid of boards plus the create-board form.
  *
  * Unauthenticated users are redirected to /login by `useRequireAuth` only
  * after AuthContext has finished loading. An expired token (401) also
@@ -34,6 +25,7 @@ type FetchState =
  */
 export function BoardsGrid() {
   const router = useRouter();
+  const pathname = usePathname();
   const { token, isAuthLoading } = useRequireAuth();
   const [state, setState] = useState<FetchState>({ status: "idle" });
 
@@ -42,14 +34,14 @@ export function BoardsGrid() {
 
     let cancelled = false;
 
-    get<Board[]>("/api/boards", { token })
+    listBoards(token)
       .then((boards) => {
-        if (!cancelled) setState({ status: "success", boards });
+        if (!cancelled) setState({ status: "success", boards, focusId: null });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         if (err instanceof ApiError && err.isUnauthorized) {
-          router.replace("/login");
+          router.replace(loginPath(pathname));
           return;
         }
         setState({
@@ -64,7 +56,12 @@ export function BoardsGrid() {
     return () => {
       cancelled = true;
     };
-  }, [token, isAuthLoading, router]);
+  }, [token, isAuthLoading, router, pathname]);
+
+  const focusId = state.status === "success" ? state.focusId : null;
+  useEffect(() => {
+    if (focusId) document.getElementById(`board-link-${focusId}`)?.focus();
+  }, [focusId]);
 
   // ----- Loading (auth loading, redirecting to /login, or fetch in flight) -----
   if (isAuthLoading || !token || state.status === "idle") {
@@ -76,7 +73,7 @@ export function BoardsGrid() {
       >
         {Array.from({ length: 6 }).map((_, i) => (
           <div
-            // eslint-disable-next-line react/no-array-index-key
+             
             key={i}
             className="h-24 animate-pulse rounded-md border border-border bg-muted"
             aria-hidden="true"
@@ -98,40 +95,43 @@ export function BoardsGrid() {
     );
   }
 
-  // ----- Empty -----
-  if (state.boards.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        You don&apos;t have any boards yet. Create one to get started.
-      </p>
-    );
-  }
+  const { boards } = state;
+  const handleCreated = (board: Board) =>
+    setState({ status: "success", boards: [board, ...boards], focusId: board.id });
 
-  // ----- Success -----
   return (
     <section aria-label="Boards">
-      <ul
-        className="grid list-none grid-cols-1 gap-4 p-0 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-        aria-label={`${state.boards.length} board${state.boards.length === 1 ? "" : "s"}`}
-      >
-        {state.boards.map((board) => (
-          <li key={board.id}>
-            <BoardCard
-              title={board.name}
-              onCardClick={() => router.push(`/boards/${board.id}`)}
-              meta={
-                <span className="text-xs text-muted-foreground">
-                  {new Date(board.updated_at).toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
-                </span>
-              }
-            />
-          </li>
-        ))}
-      </ul>
+      <CreateBoardForm onCreated={handleCreated} />
+
+      {boards.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          You don&apos;t have any boards yet. Create one to get started.
+        </p>
+      ) : (
+        <ul
+          className="grid list-none grid-cols-1 gap-4 p-0 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+          aria-label={`${boards.length} board${boards.length === 1 ? "" : "s"}`}
+        >
+          {boards.map((board) => (
+            <li key={board.id}>
+              <BoardCard
+                title={board.name}
+                href={`/boards/${board.id}`}
+                openId={`board-link-${board.id}`}
+                meta={
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(board.updated_at).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </span>
+                }
+              />
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

@@ -16,7 +16,7 @@ export default async function BoardDetailPage({
   const { id } = await params;
 
   return (
-    <main className="flex min-h-screen flex-col bg-background">
+    <main className="flex flex-1 flex-col bg-background">
       <BoardDetailView boardId={id} />
     </main>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 
 export interface BaseModalProps {
   /** Controls whether the modal is visible. */
@@ -17,7 +17,12 @@ export interface BaseModalProps {
    * @default "max-w-lg"
    */
   maxWidth?: string;
+  /** Optional short description, linked with `aria-describedby`. */
+  description?: string;
 }
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * Accessible modal dialog shell.
@@ -34,9 +39,13 @@ export function BaseModal({
   title,
   children,
   maxWidth = "max-w-lg",
+  description,
 }: BaseModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
-  const titleId = "base-modal-title";
+  const reactId = useId();
+  const titleId = `${reactId}-title`;
+  const descriptionId = `${reactId}-description`;
+  const openerRef = useRef<HTMLElement | null>(null);
 
   // Prevent body scroll while open
   useEffect(() => {
@@ -50,23 +59,54 @@ export function BaseModal({
     };
   }, [isOpen]);
 
-  // Close on Escape
+  // Close on Escape; keep Tab and Shift+Tab inside the panel
   useEffect(() => {
     if (!isOpen) return;
 
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+
+      const panel = dialogRef.current;
+      if (!panel) return;
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (items.length === 0) {
+        e.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || active === panel)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (active instanceof Node && !panel.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
     }
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Focus the dialog panel when it opens
+  // Focus the dialog panel when it opens; give focus back to the opener on close
   useEffect(() => {
-    if (isOpen) {
-      dialogRef.current?.focus();
-    }
+    if (!isOpen) return;
+    openerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialogRef.current?.focus();
+    return () => {
+      const opener = openerRef.current;
+      if (opener && document.contains(opener)) opener.focus();
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -75,7 +115,6 @@ export function BaseModal({
     /* Backdrop */
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      aria-hidden="true"
       onClick={onClose}
     >
       {/* Panel — stop backdrop click from bubbling through the panel */}
@@ -84,11 +123,12 @@ export function BaseModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
         className={[
           "relative w-full rounded-lg bg-background shadow-xl",
           "focus:outline-none",
-          "flex flex-col max-h-[90vh]",
+          "flex flex-col max-h-[90dvh]",
           maxWidth,
         ].join(" ")}
         onClick={(e) => e.stopPropagation()}
@@ -101,6 +141,8 @@ export function BaseModal({
           >
             {title}
           </h2>
+          {/* Plain <button> kept on purpose: BaseModal is itself a base
+              component and this is its built-in compact close control. */}
           <button
             type="button"
             onClick={onClose}
@@ -120,7 +162,14 @@ export function BaseModal({
         </div>
 
         {/* Scrollable body */}
-        <div className="overflow-y-auto px-6 py-4">{children}</div>
+        <div className="overflow-y-auto px-6 py-4">
+          {description && (
+            <p id={descriptionId} className="mb-3 text-sm text-muted-foreground">
+              {description}
+            </p>
+          )}
+          {children}
+        </div>
       </div>
     </div>
   );

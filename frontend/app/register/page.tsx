@@ -3,7 +3,7 @@
 import { type FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { post } from "@/lib/apiClient";
+import { register as registerAccount } from "@/lib/services/authService";
 import { ApiError } from "@/lib/errors";
 import { BaseButton } from "@/components/shared/BaseButton";
 import { useErrorHandler } from "@/hooks/useErrorHandler";
@@ -13,11 +13,6 @@ import { showSuccess } from "@/lib/toast";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Password must be at least 8 chars with one uppercase, one lowercase, one digit. */
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
-
-interface RegisterResponse {
-  id: string;
-  email: string;
-}
 
 /**
  * Register page — Client Component.
@@ -102,7 +97,7 @@ export default function RegisterPage() {
     setIsSubmitting(true);
 
     try {
-      await post<RegisterResponse>("/api/auth/register", {
+      await registerAccount({
         name: name.trim(),
         email: email.trim(),
         password,
@@ -124,7 +119,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4">
+    <main className="flex flex-1 items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-6">
         <header className="text-center">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">

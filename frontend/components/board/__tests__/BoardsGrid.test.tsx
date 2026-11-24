@@ -10,6 +10,7 @@ const mockRouter = { replace: mockReplace, push: mockPush };
 
 jest.mock("next/navigation", () => ({
   useRouter: () => mockRouter,
+  usePathname: () => "/",
 }));
 jest.mock("@/context/AuthContext", () => ({ useAuth: jest.fn() }));
 
@@ -59,7 +60,7 @@ describe("BoardsGrid", () => {
     render(<BoardsGrid />);
 
     expect(
-      await screen.findByRole("button", { name: /open card: board a/i }),
+      await screen.findByRole("link", { name: "Board A" }),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
@@ -101,13 +102,44 @@ describe("BoardsGrid", () => {
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/login"));
   });
 
-  it("navigates to the board detail when a board is clicked", async () => {
+  // Rewritten: boards are now real links (accessible name = board name) rather
+  // than "Open card" buttons that call router.push, so the click test checks the href.
+  it("renders each board as a link to its detail page", async () => {
     mockUseAuth.mockReturnValue({ token: "test-token", isLoading: false });
     fetchMock.mockResolvedValue(jsonResponse(200, { data: [board] }));
     render(<BoardsGrid />);
-    await userEvent.click(
-      await screen.findByRole("button", { name: /open card: board a/i }),
+    const link = await screen.findByRole("link", { name: "Board A" });
+    expect(link).toHaveAttribute("href", "/boards/b-1");
+  });
+
+  it("mounts the create-board form, also when there are no boards", async () => {
+    mockUseAuth.mockReturnValue({ token: "test-token", isLoading: false });
+    fetchMock.mockResolvedValue(jsonResponse(200, { data: [] }));
+    render(<BoardsGrid />);
+    expect(
+      await screen.findByRole("button", { name: "Create board" }),
+    ).toBeInTheDocument();
+  });
+
+  it("creates a board with exactly {name} and shows it as a link", async () => {
+    mockUseAuth.mockReturnValue({ token: "test-token", isLoading: false });
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
+    render(<BoardsGrid />);
+    await userEvent.click(await screen.findByRole("button", { name: "Create board" }));
+    await userEvent.type(screen.getByLabelText("Board name"), "  Roadmap ");
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(201, { data: { ...board, id: "b-2", name: "Roadmap" } }),
     );
-    expect(mockPush).toHaveBeenCalledWith("/boards/b-1");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(await screen.findByRole("link", { name: "Roadmap" })).toHaveAttribute(
+      "href",
+      "/boards/b-2",
+    );
+    const [url, init] = fetchMock.mock.calls[1];
+    expect(url).toEqual(expect.stringContaining("/api/boards"));
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ name: "Roadmap" });
+    expect(screen.getByRole("status")).toHaveTextContent("Board created");
   });
 });

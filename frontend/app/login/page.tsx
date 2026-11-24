@@ -1,7 +1,8 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { type FormEvent, Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { safeNextPath } from "@/lib/safeNextPath";
 import { useAuth } from "@/context/AuthContext";
 import { BaseButton } from "@/components/shared/BaseButton";
 
@@ -13,8 +14,18 @@ import { BaseButton } from "@/components/shared/BaseButton";
  * data-testid="login-error" for Playwright test targeting.
  */
 export default function LoginPage() {
+  // useSearchParams needs a Suspense boundary so the rest of the route can be prerendered.
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const { login } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -38,7 +49,7 @@ export default function LoginPage() {
 
     try {
       await login(email.trim(), password);
-      router.push("/");
+      router.push(safeNextPath(searchParams.get("next")));
     } catch {
       // AuthContext throws the raw error body or a plain Error.
       // We show a generic message so we never leak internal details.
@@ -49,7 +60,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4">
+    <main className="flex flex-1 items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-6">
         <header className="text-center">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">

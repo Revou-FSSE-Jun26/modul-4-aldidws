@@ -1,306 +1,202 @@
 "use client";
 
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useId, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { updateProfile as updateProfileRequest } from "@/lib/services/usersService";
+import { ApiError } from "@/lib/errors";
+import type { User } from "@/lib/types/api";
+import { BaseBadge } from "@/components/shared/BaseBadge";
 import { BaseButton } from "@/components/shared/BaseButton";
 
-// ---------------------------------------------------------------------------
-// API helper
-// ---------------------------------------------------------------------------
+const MAX_NAME_LENGTH = 255;
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-
-interface UpdatedUser {
-  id: string;
-  email: string;
-  role: string;
-  timezone: string;
+/** IANA zone names from the browser, with the current value and UTC included. */
+function timezoneOptions(current: string): string[] {
+  const supported =
+    typeof Intl.supportedValuesOf === "function"
+      ? Intl.supportedValuesOf("timeZone")
+      : [];
+  return Array.from(new Set(["UTC", current, ...supported].filter(Boolean)));
 }
 
-async function patchProfile(
-  token: string,
-  payload: { email?: string; timezone?: string },
-): Promise<UpdatedUser> {
-  // PATCH /api/users/me is not yet implemented on the backend.
-  // When it ships it should return { data: UpdatedUser }.
-  // A 404 or 405 is treated as a retriable "not yet available" error so the
-  // user knows to try again later rather than seeing a generic failure.
-  const res = await fetch(`${API_BASE}/api/users/me`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as {
-      error?: { message?: string };
-    } | null;
-    throw new Error(
-      json?.error?.message ??
-        `Failed to save profile (${res.status}). The endpoint may not be available yet.`,
-    );
-  }
-
-  const json = (await res.json()) as { data: UpdatedUser };
-  return json.data;
+interface FieldErrors {
+  name?: string;
+  timezone?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Toast — inline, no library dependency
-// ---------------------------------------------------------------------------
-
-type ToastState =
-  | { visible: false }
-  | { visible: true; message: string };
-
-function SuccessToast({ message }: { message: string }) {
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
-    >
-      {/* ✓ icon */}
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 16 16"
-        fill="currentColor"
-        className="h-4 w-4 shrink-0"
-        aria-hidden="true"
-      >
-        <path
-          fillRule="evenodd"
-          d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z"
-          clipRule="evenodd"
-        />
-      </svg>
-      {message}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Field component — label + input pair
-// ---------------------------------------------------------------------------
-
-interface FormFieldProps {
-  id: string;
-  label: string;
-  type?: "text" | "email";
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-  error?: string | null;
-  autoComplete?: string;
-}
-
-function FormField({
-  id,
-  label,
-  type = "text",
-  value,
-  onChange,
-  disabled = false,
-  error,
-  autoComplete,
-}: FormFieldProps) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label
-        htmlFor={id}
-        className="text-sm font-medium text-foreground"
-      >
-        {label}
-      </label>
-      <input
-        id={id}
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        autoComplete={autoComplete}
-        aria-invalid={error != null}
-        aria-describedby={error ? `${id}-error` : undefined}
-        className={[
-          "rounded-md border bg-background px-3 py-2 text-sm text-foreground",
-          "placeholder:text-muted-foreground",
-          "focus:outline-none focus:ring-2 focus:ring-ring",
-          "disabled:cursor-not-allowed disabled:opacity-50",
-          error
-            ? "border-destructive focus:ring-destructive"
-            : "border-border",
-        ].join(" ")}
-      />
-      {error && (
-        <p
-          id={`${id}-error`}
-          role="alert"
-          className="text-xs text-destructive"
-        >
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
-
-/**
- * Profile settings page — Client Component.
- *
- * Uses `"use client"` because it:
- *   - Reads and writes AuthContext (currentUser, token, updateProfile)
- *   - Manages controlled form inputs with useState
- *   - Displays a success toast and inline error on submit
- *
- * Calls PATCH /api/users/me and updates AuthContext optimistically on success.
- * On failure, the error message is shown inline WITHOUT clearing typed values.
- */
-export default function ProfilePage() {
-  const { currentUser, token, isLoading: isAuthLoading, updateProfile } =
-    useAuth();
-
-  // ---- Form state ----
-  const [email, setEmail] = useState("");
-  const [timezone, setTimezone] = useState("");
-
-  // ---- Submission state ----
+function ProfileForm({ user, token }: { user: User; token: string }) {
+  const { updateProfile } = useAuth();
+  const baseId = useId();
+  const [name, setName] = useState(user.name ?? "");
+  const [timezone, setTimezone] = useState(user.timezone);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [toast, setToast] = useState<ToastState>({ visible: false });
-
-  // Auto-dismiss toast after 4 s
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Pre-populate fields from AuthContext once currentUser is available.
-  // We only seed the initial value; after that the user owns the input.
-  const seededRef = useRef(false);
-  useEffect(() => {
-    if (!seededRef.current && currentUser) {
-      setEmail(currentUser.email);
-      setTimezone(currentUser.timezone);
-      seededRef.current = true;
-    }
-  }, [currentUser]);
-
-  // Clean up toast timer on unmount
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    };
-  }, []);
-
-  function showToast(message: string) {
-    setToast({ visible: true, message });
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(
-      () => setToast({ visible: false }),
-      4000,
-    );
-  }
-
-  // ---- Client-side validation ----
-  const [emailError, setEmailError] = useState<string | null>(null);
-  const [timezoneError, setTimezoneError] = useState<string | null>(null);
-
-  function validateForm(): boolean {
-    let valid = true;
-
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail) {
-      setEmailError("Email is required.");
-      valid = false;
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setEmailError("Enter a valid email address.");
-      valid = false;
-    } else {
-      setEmailError(null);
-    }
-
-    const trimmedTz = timezone.trim();
-    if (!trimmedTz) {
-      setTimezoneError("Timezone is required.");
-      valid = false;
-    } else {
-      setTimezoneError(null);
-    }
-
-    return valid;
-  }
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [status, setStatus] = useState("");
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSubmitError(null);
+    setStatus("");
 
-    if (!validateForm()) return;
-    if (!token) {
-      setSubmitError("You must be signed in to update your profile.");
-      return;
+    const trimmedName = name.trim();
+    const errors: FieldErrors = {};
+    if (trimmedName.length > MAX_NAME_LENGTH) {
+      errors.name = `Name must be ${MAX_NAME_LENGTH} characters or fewer.`;
     }
+    if (!timezone) errors.timezone = "Timezone is required.";
+    setFieldErrors(errors);
+    if (errors.name || errors.timezone) return;
 
     setIsSubmitting(true);
-
     try {
-      const updated = await patchProfile(token, {
-        email: email.trim(),
-        timezone: timezone.trim(),
+      // Exactly {name, timezone}; the backend rejects unknown fields such as email.
+      const updated = await updateProfileRequest(token, {
+        name: trimmedName,
+        timezone,
       });
-
-      // Sync AuthContext with the confirmed server values
-      updateProfile({ email: updated.email, timezone: updated.timezone });
-
-      // Show toast — do NOT clear the inputs (they already show the saved values)
-      showToast("Profile saved successfully.");
+      updateProfile({ name: updated.name, timezone: updated.timezone });
+      setStatus("Profile saved successfully.");
     } catch (err: unknown) {
-      // Show inline error WITHOUT clearing typed values (frontend.md §8.1)
-      setSubmitError(
-        err instanceof Error ? err.message : "Failed to save profile.",
-      );
+      // Typed values stay in the inputs.
+      if (err instanceof ApiError && err.details) {
+        setFieldErrors({
+          name: err.details.name?.[0],
+          timezone: err.details.timezone?.[0],
+        });
+        if (!err.details.name && !err.details.timezone) setSubmitError(err.message);
+      } else {
+        setSubmitError(err instanceof Error ? err.message : "Failed to save profile.");
+      }
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  // ---- Loading state ----
-  if (isAuthLoading) {
-    return (
-      <main className="min-h-screen bg-background px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-lg">
-          <div className="mb-8 h-7 w-32 animate-pulse rounded bg-muted" aria-hidden="true" />
-          <div className="flex flex-col gap-4">
-            <div className="h-16 animate-pulse rounded-md border border-border bg-muted" />
-            <div className="h-16 animate-pulse rounded-md border border-border bg-muted" />
-          </div>
-        </div>
-      </main>
-    );
-  }
+  const inputClasses =
+    "rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
-  // ---- Unauthenticated ----
-  if (!currentUser) {
-    return (
-      <main className="min-h-screen bg-background px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-lg">
-          <p className="text-sm text-muted-foreground">
-            Please sign in to view your profile.
-          </p>
-        </div>
-      </main>
-    );
-  }
-
-  // ---- Form ----
   return (
-    <main className="min-h-screen bg-background px-4 py-8 sm:px-6 lg:px-8">
+    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-6">
+      {submitError && (
+        <div
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          {submitError}
+        </div>
+      )}
+      <p role="status" aria-live="polite" className="text-sm text-green-800">
+        {status}
+      </p>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium text-muted-foreground">User ID</span>
+        <p className="truncate font-mono text-sm text-foreground">{user.id}</p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={`${baseId}-name`} className="text-sm font-medium text-foreground">
+          Name
+        </label>
+        <input
+          id={`${baseId}-name`}
+          type="text"
+          value={name}
+          maxLength={MAX_NAME_LENGTH + 1}
+          disabled={isSubmitting}
+          autoComplete="name"
+          onChange={(e) => {
+            setName(e.target.value);
+            setFieldErrors((f) => ({ ...f, name: undefined }));
+          }}
+          aria-invalid={fieldErrors.name !== undefined}
+          aria-describedby={fieldErrors.name ? `${baseId}-name-error` : undefined}
+          className={`${inputClasses} ${fieldErrors.name ? "border-destructive" : "border-border"}`}
+        />
+        {fieldErrors.name && (
+          <p id={`${baseId}-name-error`} role="alert" className="text-xs text-destructive">
+            {fieldErrors.name}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={`${baseId}-email`} className="text-sm font-medium text-foreground">
+          Email
+        </label>
+        <input
+          id={`${baseId}-email`}
+          type="email"
+          value={user.email}
+          readOnly
+          className={`${inputClasses} border-border bg-muted`}
+        />
+        <p className="text-xs text-muted-foreground">Email cannot be changed.</p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label
+          htmlFor={`${baseId}-timezone`}
+          className="text-sm font-medium text-foreground"
+        >
+          Timezone
+        </label>
+        <select
+          id={`${baseId}-timezone`}
+          value={timezone}
+          disabled={isSubmitting}
+          onChange={(e) => {
+            setTimezone(e.target.value);
+            setFieldErrors((f) => ({ ...f, timezone: undefined }));
+          }}
+          aria-invalid={fieldErrors.timezone !== undefined}
+          aria-describedby={fieldErrors.timezone ? `${baseId}-timezone-error` : undefined}
+          className={`${inputClasses} ${fieldErrors.timezone ? "border-destructive" : "border-border"}`}
+        >
+          {timezoneOptions(user.timezone).map((tz) => (
+            <option key={tz} value={tz}>
+              {tz}
+            </option>
+          ))}
+        </select>
+        {fieldErrors.timezone && (
+          <p
+            id={`${baseId}-timezone-error`}
+            role="alert"
+            className="text-xs text-destructive"
+          >
+            {fieldErrors.timezone}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium text-muted-foreground">Role</span>
+        <BaseBadge className="w-fit capitalize">{user.role}</BaseBadge>
+      </div>
+
+      <div className="pt-2">
+        <BaseButton type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Saving…" : "Save changes"}
+        </BaseButton>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Profile settings page. Edits name and timezone through
+ * PATCH /api/users/me; email is shown read-only and never sent.
+ */
+export default function ProfilePage() {
+  const { token, isAuthLoading } = useRequireAuth();
+  const { currentUser } = useAuth();
+
+  return (
+    <main className="flex-1 bg-background px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-lg">
-        {/* Page header */}
         <header className="mb-8">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Profile
@@ -310,81 +206,18 @@ export default function ProfilePage() {
           </p>
         </header>
 
-        {/* Success toast */}
-        {toast.visible && (
-          <div className="mb-6">
-            <SuccessToast message={toast.message} />
-          </div>
-        )}
-
-        {/* Inline submit error — shown WITHOUT clearing field values */}
-        {submitError && (
+        {isAuthLoading || !token || !currentUser ? (
           <div
-            role="alert"
-            className="mb-6 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+            className="flex flex-col gap-4"
+            aria-busy="true"
+            aria-label="Loading profile"
           >
-            {submitError}
+            <div className="h-16 animate-pulse rounded-md border border-border bg-muted" />
+            <div className="h-16 animate-pulse rounded-md border border-border bg-muted" />
           </div>
+        ) : (
+          <ProfileForm user={currentUser} token={token} />
         )}
-
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-6">
-          {/* Read-only user ID */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-muted-foreground">
-              User ID
-            </span>
-            <p className="truncate font-mono text-sm text-foreground">
-              {currentUser.id}
-            </p>
-          </div>
-
-          <FormField
-            id="profile-email"
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(v) => {
-              setEmail(v);
-              if (emailError) setEmailError(null);
-              if (submitError) setSubmitError(null);
-            }}
-            disabled={isSubmitting}
-            error={emailError}
-            autoComplete="email"
-          />
-
-          <FormField
-            id="profile-timezone"
-            label="Timezone"
-            type="text"
-            value={timezone}
-            onChange={(v) => {
-              setTimezone(v);
-              if (timezoneError) setTimezoneError(null);
-              if (submitError) setSubmitError(null);
-            }}
-            disabled={isSubmitting}
-            error={timezoneError}
-            autoComplete="off"
-          />
-
-          {/* Read-only role badge */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-muted-foreground">
-              Role
-            </span>
-            <span className="inline-flex w-fit items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium capitalize text-foreground">
-              {currentUser.role}
-            </span>
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center gap-3 pt-2">
-            <BaseButton type="submit" variant="primary" disabled={isSubmitting}>
-              {isSubmitting ? "Saving…" : "Save changes"}
-            </BaseButton>
-          </div>
-        </form>
       </div>
     </main>
   );

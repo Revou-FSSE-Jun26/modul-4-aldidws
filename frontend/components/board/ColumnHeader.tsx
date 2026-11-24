@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
+import { BaseBadge } from "@/components/shared/BaseBadge";
+import { BaseButton } from "@/components/shared/BaseButton";
 
 export interface ColumnHeaderProps {
   title: string;
@@ -15,7 +17,7 @@ const MAX_COLUMN_TITLE_LENGTH = 100;
 
 /**
  * Column heading displayed above a board column's card list.
- * Supports inline rename (double-click / Enter) and an optional delete action.
+ * Click the title to rename it inline, with an optional delete action.
  * Uses `"use client"` because it manages local editing state.
  */
 export function ColumnHeader({
@@ -24,6 +26,8 @@ export function ColumnHeader({
   onRename,
   onColumnDelete,
 }: ColumnHeaderProps) {
+  const inputId = useId();
+  const errorId = `${inputId}-error`;
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(title);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +52,7 @@ export function ColumnHeader({
       return;
     }
 
-    onRename?.(trimmed);
+    if (trimmed !== title) onRename?.(trimmed);
     setIsEditing(false);
     setError(null);
   }
@@ -74,11 +78,11 @@ export function ColumnHeader({
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {isEditing ? (
           <div className="flex flex-1 flex-col gap-1">
-            <label htmlFor="column-title-input" className="sr-only">
+            <label htmlFor={inputId} className="sr-only">
               Column name
             </label>
             <input
-              id="column-title-input"
+              id={inputId}
               type="text"
               value={draft}
               autoFocus
@@ -90,42 +94,41 @@ export function ColumnHeader({
               onKeyDown={handleKeyDown}
               maxLength={MAX_COLUMN_TITLE_LENGTH + 1}
               aria-invalid={error !== null}
-              aria-describedby={error ? "column-title-error" : undefined}
+              aria-describedby={error ? errorId : undefined}
               className="w-full rounded border border-border bg-background px-2 py-0.5 text-sm font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
             {error && (
-              <p id="column-title-error" role="alert" className="text-xs text-destructive">
+              <p id={errorId} role="alert" className="text-xs text-destructive">
                 {error}
               </p>
             )}
           </div>
         ) : (
+          // Plain <button> kept on purpose: the title only looks like text and
+          // acts as the rename trigger, so BaseButton styling does not apply.
           <button
             type="button"
-            onDoubleClick={startEditing}
-            onClick={onRename ? undefined : undefined}
+            onClick={startEditing}
             aria-label={onRename ? `Rename column: ${title}` : title}
             className="min-w-0 truncate text-left text-sm font-semibold text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            title={onRename ? "Double-click to rename" : undefined}
+            title={onRename ? "Click to rename" : undefined}
           >
             {title}
           </button>
         )}
 
-        <span
-          aria-label={`${cardCount} ${cardCount === 1 ? "card" : "cards"}`}
-          className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-        >
+        <BaseBadge aria-label={`${cardCount} ${cardCount === 1 ? "card" : "cards"}`}>
           {cardCount}
-        </span>
+        </BaseBadge>
       </div>
 
       {onColumnDelete && (
-        <button
-          type="button"
+        <BaseButton
+          variant="secondary"
+          size="icon"
           onClick={onColumnDelete}
           aria-label={`Delete column: ${title}`}
-          className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="shrink-0 !border-0 !bg-transparent text-muted-foreground hover:text-destructive"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -140,7 +143,7 @@ export function ColumnHeader({
               clipRule="evenodd"
             />
           </svg>
-        </button>
+        </BaseButton>
       )}
     </header>
   );

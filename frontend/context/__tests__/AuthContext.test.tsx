@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 const user = {
   id: "u-1",
   email: "user@example.com",
+  name: "Ann",
   role: "member",
   timezone: "UTC",
 };
@@ -68,6 +69,28 @@ describe("AuthProvider", () => {
     expect(result.current.isLoading).toBe(false);
     expect(document.cookie).toBe(cookieBefore);
     expect(document.cookie).not.toContain("refresh_token");
+    expect(window.localStorage.length).toBe(0);
+    expect(window.sessionStorage.length).toBe(0);
+  });
+
+  it("updateProfile merges name and timezone into the in-memory user only", async () => {
+    fetchMock.mockResolvedValue(okResponse(loginBody));
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await act(async () => {
+      await result.current.login("user@example.com", "password");
+    });
+    fetchMock.mockClear();
+
+    act(() => {
+      result.current.updateProfile({ name: "Bea", timezone: "Asia/Jakarta" });
+    });
+
+    expect(result.current.currentUser).toEqual({
+      ...user,
+      name: "Bea",
+      timezone: "Asia/Jakarta",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
   });
