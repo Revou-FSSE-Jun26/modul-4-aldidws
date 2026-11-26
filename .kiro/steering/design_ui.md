@@ -94,7 +94,7 @@ Define these as CSS variables in `app/globals.css` and map them into the Tailwin
 ```
 ┌──────┬───────────────┬──────────────────────────────────────────────┐
 │ Icon │  Sidebar      │  Header (title + icon buttons)               │
-│ rail │  (workspace,  ├──────────────────────────────────────────────┤
+│ rail │  (workspace,  ├──────────────────────���───────────────────────┤
 │ 56px │   nav,        │  Toolbar (search, actions, primary button)   │
 │      │   favorites)  ├──────────────────────────────────────────────┤
 │      │   ~215px      │  View tabs                 Filter Sort Group │
@@ -223,15 +223,69 @@ Adapt labels only; keep the visual structure.
 
 ---
 
-## 9. Implementation Notes
+## 8. Auth Pages (Login & Register)
+
+The login and register pages live in the `(auth)` route group (`app/(auth)/layout.tsx` provides `AuthBackground`). They share a consistent visual style with the rest of the app.
+
+### 8.1 Layout
+
+- **Auth pages** use a two-column layout on desktop:
+  - **Left column** (brand panel): brand background (`--brand-soft` or gradient), logo, app name, tagline. On mobile this panel is hidden.
+  - **Right column**: centered form card (white, `--radius-panel`, `--shadow-panel`, padding 32px, max-width 400px).
+- **AuthBackground** component wraps the form in a full-viewport flex container with `--bg-page` background and centered content.
+
+### 8.2 Form Elements
+
+- **Inputs**: white background, 1px `--border`, radius 8px, padding 10px 12px, 14px text. Focus: 2px `--brand-light` ring with 2px offset.
+- **Primary button** (Sign in / Create account): `--brand` background, white text, 14px/500, radius 8px, height 40px, full-width. Hover `--brand-hover`.
+- **Error messages**: `--accent-red` text, 12px, `role="alert"`, below the relevant field.
+- **Link** (e.g. "Don't have an account? Sign up"): `--brand` text, 13px, underline on hover.
+
+### 8.3 States
+
+- **Loading**: button shows a spinner (lucide `Loader2`, 16px, spinning) and is disabled.
+- **Success**: redirect to `/` (login) or `/login` (register).
+
+---
+
+## 9. Inbox, Notes & Reports Pages
+
+These are placeholder pages that will be expanded in future iterations. They share the standard layout: `Header` at the top, content in the main panel.
+
+### 9.1 Inbox (`/inbox`)
+
+- **Purpose**: display notifications from `GET /api/notifications`.
+- **Layout**: list of notification items (white cards, `--radius-card`, 1px `--border`, padding 12px, 8px gap). Each item shows:
+  - Title (14px/600, `--text-primary`).
+  - Body (13px, `--text-secondary`, truncated to 2 lines).
+  - Timestamp (12px, `--text-muted`).
+  - Read/unread indicator (dot or bold title).
+- **Actions**: mark as read (`PATCH /api/notifications/{id}/read`), delete.
+- **Empty state**: centered muted text "No notifications yet."
+
+### 9.2 Notes (`/notes`)
+
+- **Purpose**: placeholder for a personal notes feature (not yet implemented).
+- **Layout**: centered empty state with an icon (lucide `StickyNote`, 48px, `--text-muted`) and text "Notes coming soon."
+
+### 9.3 Reports (`/reports`)
+
+- **Purpose**: placeholder for a reports/analytics feature (not yet implemented).
+- **Layout**: centered empty state with an icon (lucide `BarChart3`, 48px, `--text-muted`) and text "Reports coming soon."
+
+---
+
+## 10. Implementation Notes
 
 - Stack: Next.js (App Router), TypeScript, Tailwind CSS with the tokens above, `lucide-react` for icons, `next/font` for Inter.
 - **Light theme only** — dark mode has been removed. The sidebar no longer contains a theme toggle.
 - Remove the default Next.js starter styles and page content.
 - Suggested structure: `components/layout/{IconRail,Sidebar,Header,Toolbar}.tsx`, `components/board/{Board,Column,ColumnHeader,TaskCard,PriorityIcon}.tsx`, `styles/tokens.css`.
 - Do not hard-code colors in components; reference tokens only.
+- Auth pages use the `(auth)` route group layout (`app/(auth)/layout.tsx`), not the main dashboard layout.
+- Inbox, Notes, and Reports pages use the main dashboard layout with `Header` and `Sidebar`.
 
-## 10. Acceptance Checklist
+## 11. Acceptance Checklist
 
 - [ ] Background, panel, column and card colors match the tokens; no default Next.js styling remains.
 - [ ] Layout has icon rail, sidebar, header, toolbar, view tabs and board as in section 3.
@@ -240,3 +294,6 @@ Adapt labels only; keep the visual structure.
 - [ ] Primary button is BMW blue; hover, focus, drag and done states work.
 - [ ] Text contrast meets WCAG AA; all controls are keyboard accessible.
 - [ ] Layout holds at 1440px, 1024px and 390px widths.
+- [ ] Auth pages (login, register) use the two-column layout with brand panel and form card.
+- [ ] Inbox page displays notifications with read/unread states.
+- [ ] Notes and Reports pages show empty states with icons and text.

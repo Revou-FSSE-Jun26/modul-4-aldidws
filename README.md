@@ -37,15 +37,24 @@ and **not committed or deployed yet**; until it is, the deployed site shows the 
 There is no board sharing: every board has exactly one owner. The `role` field on a user
 exists but no feature depends on it.
 
+Note: Board sharing, members, and roles are explicitly out of scope for the MVP. A board
+has exactly one owner and no members. This is confirmed in `specs/requirements.md` section 2
+("There is no board sharing. A board has exactly one owner and no members.") and in
+`specs/design.md` section 1 ("Every resource belongs to one user through its board").
+
 ### Core Features
 
 - **JWT Authentication** — registration and login. The access token is kept in memory only, so a page reload asks you to log in again.
+- **Auth Pages** — login and register use a two-column layout with a brand panel (left) and form card (right). The brand panel shows the app logo, name, and tagline on desktop; it is hidden on mobile.
 - **Kanban Boards** — create boards, add, rename and delete columns, add, edit, move and delete cards.
 - **Drag-and-Drop** — native HTML5 drag with a Float `order`, optimistic update and rollback on error. On touch screens use "Move to column" in the card dialog.
 - **Comments** — per-card comments with add, edit and delete by the author.
 - **Notifications** — the board owner gets one notification per new comment; the header bell shows the unread count and refreshes every 30 seconds.
+- **Inbox** — dedicated page (`/inbox`) listing notifications with read/unread states, mark-as-read action, and empty state.
 - **Search** — debounced card search over title and description on the open board.
 - **My Tasks** — every card you created, grouped by board.
+- **Notes** — placeholder page (`/notes`) for a personal notes feature (not yet implemented).
+- **Reports** — placeholder page (`/reports`) for a reports/analytics feature (not yet implemented).
 - **User Profile** — update display name and IANA timezone.
 - **Board Analytics** — backend endpoint only (no UI).
 
@@ -118,33 +127,42 @@ RevoTask was built end-to-end inside the **Kiro AI IDE**, following this iterati
 Everything in this table works in the working tree and was checked by the tests in
 section 6. The Kanban UI part is not committed or deployed yet.
 
-| Feature                                                                                            | UI  | Backend |
-| -------------------------------------------------------------------------------------------------- | --- | ------- |
-| Register, login, logout (logout clears the in-memory token; there is no server logout)             | ✅  | ✅      |
-| Header with Dashboard, My Tasks, Profile, your name, notification bell, Log out, and a mobile menu | ✅  | n/a     |
-| Protected pages redirect to `/login?next=<page>` and return there after login                      | ✅  | n/a     |
-| Create board, list boards (`/`)                                                                    | ✅  | ✅      |
-| Board page from one request (`GET /api/boards/{id}` returns columns and cards)                     | ✅  | ✅      |
-| Add, rename and delete columns (a column that still has cards cannot be deleted: 409)              | ✅  | ✅      |
-| Add, edit and delete cards (delete is a soft delete with `deleted_at`)                             | ✅  | ✅      |
-| Drag a card to another column or position (`PATCH /api/v1/cards/{id}/position`, Float `order`)     | ✅  | ✅      |
-| "Move to column" select in the card dialog (works without drag, also on touch screens)             | ✅  | ✅      |
-| Comments in the card dialog: add, edit and delete your own, author name shown                      | ✅  | ✅      |
-| Search cards on the board (`GET /api/v1/cards?search=&board_id=`), open a result in the dialog     | ✅  | ✅      |
-| Notification bell with unread count; clicking a notification marks it read                         | ✅  | ✅      |
-| My Tasks (`/my-tasks`): your cards grouped by board, with "Load more"                              | ✅  | ✅      |
-| Profile (`/profile`): edit name and timezone, email read-only                                      | ✅  | ✅      |
-| Shared components `BaseButton`, `BaseBadge`, `BaseModal` (focus trap, Escape, focus return)        | ✅  | n/a     |
-| Layout fits a 375 px wide screen (columns scroll sideways, no page overflow)                       | ✅  | n/a     |
-| `GET /api/health`                                                                                  | n/a | ✅      |
-| Board analytics summary                                                                            | ❌  | ✅      |
-| Column reorder                                                                                     | ❌  | ✅      |
-| Board rename and delete                                                                            | ❌  | ✅      |
+| Feature                                                                                                                                          | UI  | Backend |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | --- | ------- |
+| Register, login, logout (logout clears the in-memory token; there is no server logout)                                                           | ✅  | ✅      |
+| Auth pages (login, register): two-column layout with brand panel and form card                                                                   | ✅  | n/a     |
+| Header with Dashboard, My Tasks, Inbox, Notes, Reports, Profile, your name, notification bell, Log out, and a mobile menu                          | ✅  | n/a     |
+| Protected pages redirect to `/login?next=<page>` and return there after login                                                                    | ✅  | n/a     |
+| Create board, list boards (`/`)                                                                                                                  | ✅  | ✅      |
+| Board page from one request (`GET /api/boards/{id}` returns columns and cards)                                                                   | ✅  | ✅      |
+| Add, rename and delete columns (a column that still has cards cannot be deleted: 409)                                                            | ✅  | ✅      |
+| Add, edit and delete cards (delete is a soft delete with `deleted_at`)                                                                           | ✅  | ✅      |
+| Drag a card to another column or position (`PATCH /api/v1/cards/{id}/position`, Float `order`)                                                   | ✅  | ✅      |
+| "Move to column" select in the card dialog (works without drag, also on touch screens)                                                           | ✅  | ✅      |
+| Comments in the card dialog: add, edit and delete your own, author name shown                                                                    | ✅  | ✅      |
+| Search cards on the board (`GET /api/v1/cards?search=&board_id=`), open a result in the dialog                                                   | ✅  | ✅      |
+| Due date on a card (set and remove in the dialog; Overdue / Due soon badge on board and My Tasks)                                                | ✅  | ✅      |
+| Board labels: create, rename, recolour, delete; attach to cards (`/api/boards/{id}/labels`, `PUT /api/v1/cards/{id}/labels`)                     | ✅  | ✅      |
+| Board filter bar: keyword, labels (any of), due date; state in `?q=&labels=&due=`; press `f` to focus (client-side, drag is off while filtering) | ✅  | n/a     |
+| Notification bell with unread count; clicking a notification marks it read                                                                       | ✅  | ✅      |
+| Inbox (`/inbox`): notifications list with read/unread states, mark-as-read action, empty state                                                   | ✅  | ✅      |
+| Notes (`/notes`): placeholder page for personal notes (not yet implemented)                                                                       | ✅  | n/a     |
+| Reports (`/reports`): placeholder page for analytics/reports (not yet implemented)                                                               | ✅  | n/a     |
+| My Tasks (`/my-tasks`): your cards grouped by board, with "Load more"                                                                            | ✅  | ✅      |
+| Profile (`/profile`): edit name and timezone, email read-only                                                                                    | ✅  | ✅      |
+| Shared components `BaseButton`, `BaseBadge`, `BaseModal` (focus trap, Escape, focus return)                                                      | ✅  | n/a     |
+| Layout fits a 375 px wide screen (columns scroll sideways, no page overflow)                                                                     | ✅  | n/a     |
+| `GET /api/health`                                                                                                                                | n/a | ✅      |
+| Board analytics summary                                                                                                                          | ❌  | ✅      |
+| Column reorder                                                                                                                                   | ❌  | ✅      |
+| Board rename and delete                                                                                                                          | ❌  | ✅      |
 
 ### Known limits
 
 - **Reload logs you out.** The token lives in memory only and the backend has no refresh
   endpoint (V-009). After a reload you go to `/login?next=...` and come back to the same page.
+  Only the path is kept, so active board filters (`?q=`, `?labels=`, `?due=`) are lost on reload.
+  A link that already contains the query, opened through `/login?next=...`, is applied.
 - **The board owner is notified on every comment, including their own.** Boards have one
   owner, so there is nobody else to notify. The bell refreshes every 30 seconds, so a new
   count can take up to 30 seconds to appear.
@@ -347,12 +365,12 @@ npx playwright show-report ../e2e/playwright-report
 These are the results of the runs made during the Kanban UI work. Nothing here was run
 against the public Railway or Vercel URLs.
 
-| Command                                                               | Result                             |
-| --------------------------------------------------------------------- | ---------------------------------- |
-| `pytest -q` (from `backend/`, `APP_ENV=testing`, local test database) | 168 passed                         |
-| `npx jest` (from `frontend/`)                                         | 23 suites, 175 tests passed        |
-| `npx tsc --noEmit`, `npm run lint`, `npm run build`                   | no errors (lint reports 1 warning) |
-| `npm run e2e` against local Flask + `next start`                      | 18 passed, run twice, no retries   |
+| Command                                                               | Result                                      |
+| --------------------------------------------------------------------- | ------------------------------------------- |
+| `pytest -q` (from `backend/`, `APP_ENV=testing`, local test database) | 325 passed                                  |
+| `npx jest` (from `frontend/`)                                         | 39 suites, 339 tests passed                 |
+| `npx tsc --noEmit`, `npm run lint`, `npm run build`                   | no errors (lint reports 1 warning)          |
+| `npm run e2e` against local Flask + `next start`                      | 26 passed (chromium and mobile), no retries |
 
 `waitForTimeout` is not used anywhere in `e2e/` or `frontend/` source.
 
@@ -391,6 +409,9 @@ the new config location and needs a running backend, so CI e2e is not verified.
 | `/` — Dashboard (boards grid)                        | _(screenshot placeholder)_ |
 | `/boards/[id]` — Board detail with columns and cards | _(screenshot placeholder)_ |
 | `/my-tasks` — Cards you created, grouped by board    | _(screenshot placeholder)_ |
+| `/inbox` — Notifications list                        | _(screenshot placeholder)_ |
+| `/notes` — Personal notes (placeholder)              | _(screenshot placeholder)_ |
+| `/reports` — Analytics/reports (placeholder)         | _(screenshot placeholder)_ |
 | `/profile` — User profile settings                   | _(screenshot placeholder)_ |
 
 ---

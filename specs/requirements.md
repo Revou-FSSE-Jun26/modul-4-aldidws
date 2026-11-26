@@ -64,6 +64,9 @@ There is no board sharing. A board has exactly one owner and no members.
 | R12 | Data persistence and integrity                  | Done except two gaps Planned                                              |
 | R13 | Analytics                                       | Backend only, no MVP UI                                                   |
 | R14 | Notifications                                   | Backend only, no producer, no MVP UI                                      |
+| R15 | Card due dates                                  | Planned (kanban-features phase 1)                                         |
+| R16 | Board labels                                    | Planned (kanban-features phase 2)                                         |
+| R17 | Board filter                                    | Planned (kanban-features phase 3)                                         |
 
 ## 5. Functional requirements
 
@@ -145,7 +148,7 @@ Status: backend Done except R4.5. UI Planned.
 - **R4.7** IF a failed create or edit request returns an error, THEN THE frontend SHALL keep the typed values and show the error. `[Plan]`
 - **R4.8** THE backend SHALL return 404 `CARD_NOT_FOUND` for a card whose board the caller does not own, and 404 `COLUMN_NOT_FOUND` when creating in a column the caller does not own. `[Done]`
 
-Cards have no assignee, priority, status, due date or labels. The column acts as the status (D8, D9).
+Cards have no assignee, priority or status. The column acts as the status (D8, D9). Due dates and labels are added by R15 and R16.
 
 ### Requirement 5: Move and reorder cards
 
@@ -210,7 +213,7 @@ Status: Planned. Assumption pending confirmation: D9, D13.
 - **R8.2** WHEN a Member types a query of 1 to 100 characters, THE frontend SHALL show only the cards of the open board whose title or description contains the query, ignoring letter case. `[Plan]` Default (D13): the filter runs in the browser over the board data from R2.5. No new endpoint.
 - **R8.3** WHEN the query is empty, THE frontend SHALL show all cards. `[Plan]`
 - **R8.4** WHEN no card matches, THE frontend SHALL show a "No cards match" message. `[Plan]`
-- **R8.5** THE search SHALL cover only the open board and SHALL NOT filter by priority, status, due date, label or assignee. `[Plan]` The cards have no such fields (verified in `backend/app/models/card.py`).
+- **R8.5** THE search SHALL cover only the open board and SHALL NOT filter by priority, status, due date, label or assignee. `[Plan]` The board filter bar (R17) is a separate control and does not change this criterion. The cards have no such fields (verified in `backend/app/models/card.py`).
 - **R8.6** WHEN the Member clears the box, THE frontend SHALL restore the full board. `[Plan]`
 
 ### Requirement 9: Session lifetime
@@ -284,6 +287,90 @@ Status: Backend only. No UI and no producer in the MVP (D6).
 - **R14.3** THE frontend SHALL NOT show `NotificationBell` in the MVP. `[Done]` (the component is not mounted)
 - **R14.4** Nothing in the backend creates notifications. A search of `backend/app` found the `Notification` class only in its model file. `[Plan]` when notifications return (post-MVP).
 
+### Requirement 15: Card due dates
+
+**User story:** As a Member, I want to give a card a due date, so that I can see which work is late or about to be late.
+
+Status: Planned (phase 1 of `.agents/tasks/kanban-features`). Design: `design.md` section 17.1. Decisions: section 12.2.
+
+Terms: "UTC ISO" means `YYYY-MM-DDTHH:MM:SSZ`. "Local time" means the time zone of the user's browser.
+
+#### Acceptance criteria
+
+- **R15.1** WHEN a Member sends `due_date` (a string or `null`) to `POST /api/v1/columns/{column_id}/cards`, THE backend SHALL store it and return 201 with `due_date` in the card object. WHEN `due_date` is omitted, THE card SHALL have `due_date` `null`. `[Plan]`
+- **R15.2** WHEN a Member sends `PATCH /api/v1/cards/{card_id}` with a valid `due_date` string, THE backend SHALL replace the stored value and return 200. WHEN the body omits `due_date`, THE stored value SHALL stay unchanged. `[Plan]`
+- **R15.3** WHEN a Member sends `PATCH /api/v1/cards/{card_id}` with `"due_date": null`, THE backend SHALL clear the value and return 200 with `due_date` `null`. `[Plan]`
+- **R15.4** IF `due_date` is not an ISO 8601 date-time string, THEN THE backend SHALL return 400 `VALIDATION_ERROR` with `details.due_date` and SHALL change nothing. `[Plan]`
+- **R15.5** IF `due_date` has no UTC offset (naive, for example `2026-12-01T17:00:00`), THEN THE backend SHALL return 400 `VALIDATION_ERROR` with `details.due_date`. `[Plan]`
+- **R15.6** IF the value, as sent or converted to UTC, has a year before 2000 or after 2100, THEN THE backend SHALL return 400 `VALIDATION_ERROR` with `details.due_date`. This SHALL also hold for extreme values whose conversion to UTC overflows (for example `9999-12-31T23:59:59-05:00` and `0001-01-01T00:00:00+05:00`): the response is 400, never 500. `[Plan]`
+- **R15.7** THE backend SHALL store `due_date` as `timestamp with time zone` in UTC, discard fractional seconds, and serialise it as UTC ISO with the `Z` suffix. An input with another offset (for example `+07:00`) SHALL be converted to UTC. `[Plan]`
+- **R15.8** EVERY card object returned by the backend SHALL contain `due_date` (a UTC ISO string or `null`): create, update, position, board read (route 6), card list (route 26) and the label replace route. `[Plan]`
+- **R15.9** IF the card does not exist or its board is owned by another user, THEN `PATCH /api/v1/cards/{card_id}` SHALL return 404 `CARD_NOT_FOUND` and leave the card unchanged. A request without a valid token SHALL return 401. `[Plan]`
+- **R15.10** THE card schemas SHALL keep rejecting unknown fields with 400. A PATCH that does not contain `due_date` SHALL NOT change it. A card move (route 16) SHALL keep the card's `due_date`. `[Plan]`
+- **R15.11** THE database change SHALL be one nullable column `cards.due_date` with no default and no backfill, so that the code deployed before this change keeps working against the migrated database. THE migration SHALL have a working downgrade. `[Plan]`
+- **R15.12** THE card dialog SHALL contain an input of type `datetime-local` with the accessible name "Due date", filled with the stored value in local time, a Save control and a "Remove due date" control. All three controls SHALL use `BaseButton` where they are buttons. `[Plan]`
+- **R15.13** WHEN the Member saves, THE frontend SHALL send exactly `{"due_date": "<UTC ISO>"}` to `PATCH /api/v1/cards/{card_id}`. WHEN the Member chooses "Remove due date", THE frontend SHALL send exactly `{"due_date": null}`. THE Remove control SHALL be disabled while the card has no due date. `[Plan]`
+- **R15.14** WHILE the input is empty or holds a date outside 2000..2100, THE Save control SHALL be disabled. IF the request fails, THEN THE frontend SHALL show the error with `role="alert"` and keep the typed value. `[Plan]`
+- **R15.15** THE frontend SHALL compute the due state from the due date and a `now` argument: `none` (no due date), `overdue` (due before now), `soon` (due from now up to and including now + 24 hours), `upcoming` (later). A due date equal to `now` is `soon`. `[Plan]`
+- **R15.16** THE board card and each row on `/my-tasks` SHALL show, for the states `overdue`, `soon` and `upcoming`, a `BaseBadge` with an icon and visible text ("Overdue", "Due soon" or "Due" followed by the date). THE state `none` SHALL show no badge. THE meaning SHALL NOT depend on colour alone. THE badge SHALL carry a `title` with the full local date and time. `[Plan]`
+- **R15.17** THE frontend SHALL show dates in the browser's locale and time zone. THE profile `timezone` SHALL NOT be used to display due dates in this release. `[Plan]`
+- **R15.18** THE board page SHALL recompute badge states with a fresh `now` every 60 seconds and after each board reload, without a page reload. `[Plan]`
+
+### Requirement 16: Board labels
+
+**User story:** As a Member, I want to define coloured labels on a board and attach them to cards, so that I can categorise work.
+
+Status: Planned (phase 2). Design: `design.md` section 17.2. Decisions: section 12.2.
+
+A label belongs to one board. A card can carry labels of its own board only. Colour keys: `blue`, `sky`, `graphite`, `silver`, `red`, `orange`, `green`, `purple`.
+
+#### Acceptance criteria
+
+- **R16.1** WHEN a Member requests `GET /api/boards/{board_id}/labels` for an owned board, THE backend SHALL return 200 with the labels ordered by lowercase name, then name, then id. IF the board is missing or owned by someone else, THEN THE backend SHALL return 404 `BOARD_NOT_FOUND`. `[Plan]`
+- **R16.2** WHEN a Member sends `POST /api/boards/{board_id}/labels` with `name` (1 to 50 characters after trimming, not blank) and `color` (one of the 8 keys), THE backend SHALL create the label and return 201 with `id`, `board_id`, `name`, `color`, `created_at`, `updated_at`. `[Plan]`
+- **R16.3** IF `name` or `color` is missing, blank, too long or not allowed, or the body has an unknown field, THEN THE backend SHALL return 400 `VALIDATION_ERROR` and create nothing. `[Plan]`
+- **R16.4** IF the board already has a label with the same name compared case-insensitively, THEN THE backend SHALL return 409 `RESOURCE_CONFLICT`. Two different boards MAY have labels with the same name. `[Plan]`
+- **R16.5** WHEN a Member sends `PATCH /api/labels/{label_id}` with `name` and/or `color`, THE backend SHALL validate as in R16.2 and R16.4 and return 200 with the label. A body with neither field SHALL return 400. A change of letter case only on the same label SHALL NOT conflict with itself. IF the label is missing or on a board owned by someone else, THEN THE backend SHALL return 404 `LABEL_NOT_FOUND`. `[Plan]`
+- **R16.6** WHEN a Member sends `DELETE /api/labels/{label_id}`, THE backend SHALL hard-delete the label and its card associations and return 204. The cards themselves SHALL stay. Afterwards no card object SHALL contain that label. `[Plan]`
+- **R16.7** WHEN a Member sends `PUT /api/v1/cards/{card_id}/labels` with `label_ids` (a list of UUIDs), THE backend SHALL replace the card's label set with exactly that list in one transaction and return 200 with the card object. An empty list SHALL remove all labels. `[Plan]`
+- **R16.8** IF any id in `label_ids` is not a label of the same board as the card, THEN THE backend SHALL return 404 `LABEL_NOT_FOUND` and change nothing. The response SHALL be the same for a label of another board of the caller, a label of another user's board and an unknown id. `[Plan]`
+- **R16.9** IF `label_ids` contains a duplicate id, more than 20 ids, a value that is not a UUID, or the body has an unknown field, THEN THE backend SHALL return 400 `VALIDATION_ERROR` and change nothing. `[Plan]`
+- **R16.10** THE board read (route 6) SHALL contain `labels` (all labels of the board, order as R16.1). `[Plan]`
+- **R16.11** EVERY card object returned by the backend SHALL contain `labels`, a list of `{id, name, color}` ordered as R16.1 (`[]` when none): create, update, position, board read, card list (route 26) and route 31. `[Plan]`
+- **R16.12** THE board read and the card list SHALL load labels with a fixed number of queries, not one query per card. `[Plan]`
+- **R16.13** EVERY new route SHALL answer 401 without a valid token and SHALL resolve the label, card or board through its board owner. A path id that is not a UUID SHALL return 404. `[Plan]`
+- **R16.14** WHEN a board is deleted, THE database SHALL delete its labels and associations by cascade. A soft-deleted card SHALL keep its associations but SHALL NOT appear in any read. `[Plan]`
+- **R16.15** THE database change SHALL add only new tables (`labels`, `card_labels`) and SHALL have a working downgrade. `[Plan]`
+- **R16.16** EACH label on a board card SHALL show as a pill with the colour and the name text, never colour alone. A long name SHALL be truncated visually and the full name SHALL be in the `title` attribute. `[Plan]`
+- **R16.17** THE card dialog SHALL have a "Labels" section with a button that opens a multi-select list (`role="listbox"`, `aria-multiselectable`, options with `aria-selected`). The list SHALL work with Arrow keys, Space and Enter, SHALL close on Escape without saving and return focus to the button, and SHALL send the chosen set once through an Apply control as exactly `{"label_ids": [...]}`. `[Plan]`
+- **R16.18** THE card dialog SHALL let the Member create a label (name and colour), and rename, recolour and delete an existing label. THE delete SHALL ask for confirmation naming the label. A 409 SHALL show "A label with that name already exists." and keep the typed name. `[Plan]`
+- **R16.19** THE colour choice SHALL show the colour name as text next to each swatch. THE frontend SHALL define the 8 colours in one file, `frontend/lib/labelColors.ts`, with no raw hex value in any component. EACH label background and text pair SHALL have a contrast ratio of at least 4.5:1, asserted by a test that computes it. `[Plan]`
+- **R16.20** AFTER a label is created, renamed, recoloured or deleted, THE frontend SHALL reload the board so that every card shows the current label data. `[Plan]`
+
+### Requirement 17: Board filter
+
+**User story:** As a Member, I want to filter the cards of an open board by keyword, label and due date, so that I can focus on part of the work.
+
+Status: Planned (phase 3). Design: `design.md` section 17.3. Decisions: section 12.2. Depends on R15 and R16. No new backend route.
+
+#### Acceptance criteria
+
+- **R17.1** THE board page SHALL show a filter bar between the board title and the columns, with a keyword input, a label multi-select, a due date select (Any, Overdue, Due within 24 hours, Due within 7 days, No due date) and a "Clear filters" button. Every control SHALL have an accessible name. `[Plan]`
+- **R17.2** THE keyword filter SHALL keep a card WHEN the trimmed keyword occurs, ignoring letter case, in the card title or description. An empty or blank keyword SHALL keep every card. THE input SHALL accept at most 100 characters. `[Plan]`
+- **R17.3** THE label filter SHALL keep a card WHEN it carries at least one of the selected labels (ANY). With no label selected, every card SHALL be kept. `[Plan]`
+- **R17.4** THE due date filter SHALL use these rules with the current `now`: Overdue keeps `due < now`. Due within 24 hours keeps `now <= due <= now + 24 h`. Due within 7 days keeps `now <= due <= now + 7 days`. No due date keeps `due` null. Any keeps all. A card without a due date SHALL NOT match Overdue, 24 hours or 7 days. `[Plan]`
+- **R17.5** THE three filters SHALL combine with AND. `[Plan]`
+- **R17.6** NON-matching cards SHALL be hidden, not removed from the board data. WHILE any filter is active, EACH column header SHALL show "x of y", where x is the number of visible cards and y the number of cards in the column. WHILE no filter is active, no count SHALL be shown. `[Plan]`
+- **R17.7** WHEN a filter is active, the board has at least one card and no card matches, THE frontend SHALL show "No cards match these filters." once, as a `role="status"` block between the filter bar and the columns. A column that has cards but none visible SHALL show no empty text. `[Plan]`
+- **R17.8** WHEN the Member chooses "Clear filters", THE frontend SHALL reset all three filters and remove them from the URL. THE control SHALL be disabled while no filter is active. `[Plan]`
+- **R17.9** THE filter state SHALL be kept in the URL query `q`, `labels` (comma-separated label ids) and `due` (`overdue`, `24h`, `7d` or `none`), so that a reload shows the same filters. A value that is invalid (unknown `due`, a label id that is not a label of this board) SHALL be ignored without an error, and a `q` longer than 100 characters SHALL be cut to its first 100 characters. THE URL SHALL NOT be rewritten because of an ignored value: only a user action changes it, so a reload before the board has loaded keeps `labels` intact. `[Plan]`
+- **R17.10** WHILE any filter is active, THE frontend SHALL turn drag and drop off and SHALL show the text "Drag and drop is off while filters are active. Clear filters to move cards." in the filter bar. The "Move to column" control in the card dialog SHALL keep working and SHALL compute the new `order` from the complete column. `[Plan]`
+- **R17.11** WHEN the Member presses the `f` key without modifier keys while focus is not in an input, textarea, select or editable element and no dialog is open, THE frontend SHALL focus the keyword input (and open the filter bar on a narrow screen) and SHALL NOT type the character. THE input SHALL expose `aria-keyshortcuts="f"` and the hint SHALL be visible. `[Plan]`
+- **R17.12** ON screens narrower than the `md` breakpoint, THE filter bar SHALL be collapsible with a button that has `aria-expanded` and `aria-controls`, and the button SHALL show the number of active filters. AT 375 px the page SHALL NOT scroll horizontally with the bar open. `[Plan]`
+- **R17.13** THE board filter SHALL NOT call the backend. THE existing global `SearchBar` SHALL stay unchanged. `[Plan]`
+- **R17.14** THE filter functions SHALL be pure, take `now` as an argument and SHALL NOT change their input. `[Plan]`
+- **R17.15** WHEN a filter is active, THE filter bar SHALL contain a status text "N of M cards shown" (`role="status"`, polite). It SHALL be updated only after typing has paused for 300 ms. `[Plan]`
+
 ## 6. Non-functional requirements
 
 ### N1 Security
@@ -312,7 +399,7 @@ Status: Backend only. No UI and no producer in the MVP (D6).
 
 ### N4 Performance basics
 
-- **N4.1** THE board read (R2.5) SHALL use a fixed number of queries (board, columns, cards), not one query per column. `[Plan]`
+- **N4.1** THE board read (R2.5) SHALL use a fixed number of queries (board, columns, cards, plus the label queries from R16.12), not one query per column or card. `[Plan]`
 - **N4.2** THE backend SHOULD answer board read, card move and comment calls in under 500 ms at the 95th percentile for a board of up to 10 columns and 200 cards. `[Plan]` No measurement exists. The target is an assumption.
 - **N4.3** Boards and cards lists have no pagination in the MVP. Notifications do. `[Done]` (documented limit)
 
@@ -344,7 +431,7 @@ Status: Backend only. No UI and no producer in the MVP (D6).
 
 - Board sharing, members and roles (single owner only).
 - Admin features.
-- Task attributes: status, priority, due date, overdue filters, sorting, labels, assignee (D8, D9).
+- Task attributes: status, priority, sorting, assignee (D8, D9). Due dates, labels and the board filter are in scope through R15 to R17. Overdue notifications, reminders, recurring dates, label sharing across boards and server-side filtering stay out of scope.
 - "My Tasks" page (D8).
 - Activity log (D12).
 - Notifications in the UI and their producers (D6).
@@ -352,6 +439,8 @@ Status: Backend only. No UI and no producer in the MVP (D6).
 - Email change (D5).
 - Server-side session refresh and logout (R9.4).
 - Real-time updates, attachments, integrations.
+
+Note: Board sharing, members and roles are explicitly out of scope for the MVP. A board has exactly one owner and no members. This is confirmed in section 2 ("There is no board sharing. A board has exactly one owner and no members.") and in `design.md` section 1 ("Every resource belongs to one user through its board").
 
 ## 9. Assumptions
 
@@ -404,3 +493,18 @@ The project assessment requires a notification bell with an unread count, a work
 - **D8 changed.** `/my-tasks` is kept, not removed. It lists the cards the caller created (`GET /api/v1/cards?mine=true`), grouped by board, with links to each board. There is still no assignee field.
 - **D13 changed.** Search runs on the backend: `GET /api/v1/cards?search=&board_id=` matches title and description, case-insensitive, at most 100 characters, only over boards the caller owns. The board page uses it with `board_id` set.
 - D2, D3 and D7 were implemented with the default shown in the table. D1 is unchanged: board delete is still a hard database cascade and there is no board delete UI.
+
+### 12.2 Decisions for due dates, labels and the board filter (2026-11-24)
+
+The product owner chose the three features and their order ("mulai dari tanggal jatuh tempo, lalu label dan filter"). The rows D14 to D21 resolve the points the brief left open. They overrule section 8 and D9 where those say "no due date, labels".
+
+| ID  | Question                                | Decision                                                                                                                                                            | Why                                                                                                                                                                       |
+| --- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D14 | Drag and drop while a filter is active  | Turn drag and drop off and say so in the filter bar (R17.10). The "Move to column" control stays and uses the complete column.                                      | A drop between two visible cards may hide cards between them. Computing `order` from visible neighbours is wrong. Off is the safer option and needs no new ordering code. |
+| D15 | Label filter: ANY or ALL                | ANY. A card matches when it has at least one selected label (R17.3).                                                                                                | Matches Trello's default for a label filter and gives a non-empty result more often. Other filters narrow with AND.                                                       |
+| D16 | Time zone for due date display          | The browser's locale and time zone. The profile `timezone` is not used (R15.17). Storage and API are UTC.                                                           | The profile timezone is free text with no consumer today. The input `datetime-local` already works in browser time, so both directions stay consistent.                   |
+| D17 | Duplicate ids in `label_ids`            | Reject with 400 (R16.9).                                                                                                                                            | The client builds the list from a set. A duplicate signals a bug. Silent de-duplication hides it.                                                                         |
+| D18 | 404 or 403 for resources of other users | 404 for every new route, with the same body as a missing resource (R16.8, R16.13). No new 403.                                                                      | Follows R11.3 and `security.md` section 4.5 (do not disclose existence). The comment 403 stays a known deviation (R6.5).                                                  |
+| D19 | Migrations                              | Two migrations, one per phase: phase 1 adds `cards.due_date`, phase 2 adds `labels` and `card_labels`. Phase 3 has none. Justification in `design.md` section 17.4. | Phase 1 can ship alone and be rolled back alone. The label migration is larger and carries the risk. A combined migration would tie due dates to it.                      |
+| D20 | Due date serialisation                  | UTC with `Z` and second precision, for this field only. Existing timestamps keep `+00:00`.                                                                          | `api-contracts.md` asks for `Z`. Changing existing fields is a breaking change and out of scope.                                                                          |
+| D21 | Labels per board                        | No limit on the number of labels per board in this release. Open risk recorded in `design.md` section 17.5. The limit of 20 labels per card stays.                  | The brief fixes only the per-card limit. A board limit would be a new product rule and needs the product owner.                                                           |
