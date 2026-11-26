@@ -1,16 +1,67 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: var(--bg-page);
+  --foreground: var(--text-primary);
   --muted: #f3f4f6;
   --muted-foreground: #4b5563;
-  --border: #d1d5db;
+  --border: #e4e6eb;
   --card: #ffffff;
   --primary: #2563eb;
   --primary-foreground: #ffffff;
   --destructive: #b91c1c;
   --ring: #3b82f6;
+
+  /* Label colours: the only place with hex values for labels.
+     Each pair is checked for WCAG AA contrast (>= 4.5) by labelColors.test.ts. */
+  --label-blue-bg: #dbeafe;
+  --label-blue-fg: #1e3a8a;
+  --label-sky-bg: #e0f2fe;
+  --label-sky-fg: #075985;
+  --label-graphite-bg: #374151;
+  --label-graphite-fg: #ffffff;
+  --label-silver-bg: #e5e7eb;
+  --label-silver-fg: #1f2937;
+  --label-red-bg: #fee2e2;
+  --label-red-fg: #991b1b;
+  --label-orange-bg: #ffedd5;
+  --label-orange-fg: #9a3412;
+  --label-green-bg: #dcfce7;
+  --label-green-fg: #166534;
+  --label-purple-bg: #f3e8ff;
+  --label-purple-fg: #6b21a8;
+
+  /* === Design spec §2 tokens === */
+  --bg-page: #e8ebf0;
+  --bg-panel: #ffffff;
+  --bg-column: #f1f2f4;
+  --bg-hover: #f5f6f8;
+  --bg-input: #f6f7f9;
+  --border-strong: #d5d8de;
+  --text-primary: #14161a;
+  --text-secondary: #5b6270;
+  --text-muted: #8b92a0;
+  --brand: #1c69d4;
+  --brand-hover: #0653b6;
+  --brand-soft: #e8f1fc;
+  --brand-light: #81c4ff;
+  --accent-red: #e7222e;
+  --accent-navy: #0a1f44;
+  --pill-gray: #8e949e;
+  --pill-blue: #1c69d4;
+  --pill-orange: #f4802b;
+  --pill-green: #2fae66;
+  --prio-high: #e7222e;
+  --prio-medium: #f5a623;
+  --prio-low: #9aa3b2;
+  --radius-panel: 16px;
+  --radius-card: 12px;
+  --radius-ctrl: 8px;
+  --radius-pill: 6px;
+  --shadow-card:
+    0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.04);
+  --shadow-drag: 0 12px 24px rgba(16, 24, 40, 0.18);
+  --shadow-panel: 0 1px 3px rgba(16, 24, 40, 0.05);
 }
 
 @theme inline {
@@ -24,12 +75,383 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-destructive: var(--destructive);
   --color-ring: var(--ring);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter);
+  --color-bg-page: var(--bg-page);
+  --color-bg-panel: var(--bg-panel);
+  --color-bg-column: var(--bg-column);
+  --color-bg-hover: var(--bg-hover);
+  --color-bg-input: var(--bg-input);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-accent-red: var(--accent-red);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+
+/* List view priority dots */
+.list-prio-dot[data-priority="high"] {
+  color: var(--prio-high);
+}
+.list-prio-dot[data-priority="medium"] {
+  color: var(--prio-medium);
+}
+.list-prio-dot[data-priority="low"] {
+  color: var(--prio-low);
+}
+
+/* ============================================================
+   §7 Responsive breakpoints
+   ============================================================ */
+
+/* ---- 768–1279px: sidebar collapses to icon-only (56px) ---- */
+@media (max-width: 1279px) {
+  /* Force sidebar to icon-only width */
+  [data-layout] aside {
+    width: 56px;
+    padding: 0.5rem;
+  }
+
+  /* Hide the text labels / info blocks inside the sidebar */
+  [data-layout] aside [data-user-info],
+  [data-layout] aside [data-user-name],
+  [data-layout] aside [data-user-email] {
+    display: none;
+  }
+
+  /* Hide nav link text labels (the span next to each icon) */
+  [data-layout] aside nav span:not(.sr-only) {
+    display: none;
+  }
+
+  /* Centre all nav rows that were left-aligned */
+  [data-layout] aside nav a,
+  [data-layout] aside nav span[role="link"] {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  /* Hide collapsible section headers (Favorites, Projects) text */
+  [data-layout] aside details summary span:not(.sr-only) {
+    display: none;
+  }
+
+  /* Hide the workspace text in the workspace header */
+  [data-layout] aside > div > span.min-w-0 {
+    display: none;
+  }
+
+  /* Toolbar: hide text labels on Filter/Sort/Group buttons — keep icons */
+  /* (Already handled via hidden sm:inline in FilterBar; this is a belt-and-suspenders guard) */
+}
+
+/* ---- <768px: hide icon rail and sidebar entirely ---- */
+@media (max-width: 767px) {
+  [data-icon-rail] {
+    display: none;
+  }
+
+  [data-layout] aside {
+    display: none;
+  }
+
+  /* Allow layout to stack the header + toolbar vertically if needed */
+  [data-layout] {
+    flex-direction: column;
+  }
+
+  /* Board main area takes full width */
+  [data-layout] > main {
+    width: 100%;
+  }
+}
+
+/* Done-card strikethrough (applied via data attribute from BoardCard) */
+[data-done="true"] {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+/* Auth page background tokens */
+:root {
+  --auth-mint: #beefd9;
+  --auth-aqua: #d3f1f2;
+  --auth-base: #ffffff;
+  --auth-gradient-h: 360px;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --auth-gradient-h: 240px;
+  }
+}
+
+/* Applied to the .auth-bg wrapper */
+.auth-bg {
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
+  background: var(--auth-base);
+}
+
+.auth-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: var(--auth-gradient-h);
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(
+      ellipse 60% 100% at 20% 0%,
+      var(--auth-mint) 0%,
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse 55% 100% at 100% 0%,
+      var(--auth-aqua) 0%,
+      transparent 100%
+    ),
+    linear-gradient(180deg, transparent 0%, var(--auth-base) 100%);
+}
+
+/* Inner-page background (same mint gradient but shorter — 200px desktop, 140px mobile) */
+.page-bg {
+  position: relative;
+  flex: 1;
+  background: var(--auth-base);
+}
+
+.page-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 200px;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(
+      ellipse 60% 100% at 20% 0%,
+      var(--auth-mint) 0%,
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse 55% 100% at 100% 0%,
+      var(--auth-aqua) 0%,
+      transparent 100%
+    ),
+    linear-gradient(180deg, transparent 0%, var(--auth-base) 100%);
+}
+
+.page-bg > * {
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 640px) {
+  .page-bg::before {
+    height: 140px;
+  }
+}
+
+/* ── Board-style gradient background (Trello-inspired, mint palette) ── */
+
+/* Ring colours for the background picker selected state */
+:root {
+  --bg-ring: #17825f;
+  --bg-panel-overlay: rgba(255, 255, 255, 0.7);
+}
+
+/* ── Per-preset CSS variable blocks ── */
+/* Each block sets --bg-1, --bg-2 (light) and optionally --bg-mid (dark only). */
+
+[data-board-bg="mint"] {
+  --bg-1: #beefd9;
+  --bg-2: #d3f1f2;
+}
+
+[data-board-bg="teal"] {
+  --bg-1: #bfe6ec;
+  --bg-2: #ddf3f5;
+}
+
+[data-board-bg="forest"] {
+  --bg-1: #c9ebd4;
+  --bg-2: #e3f5e8;
+}
+
+[data-board-bg="lagoon"] {
+  --bg-1: #bdeaf0;
+  --bg-2: #d6f5ec;
+}
+
+[data-board-bg="sage"] {
+  --bg-1: #d5e4dd;
+  --bg-2: #eaf2ee;
+}
+
+[data-board-bg="midnight"] {
+  --bg-1: #c4dee0;
+  --bg-2: #ddf0ea;
+}
+
+/* Fallback when no data-board-bg is set */
+:root {
+  --bg-1: #beefd9;
+  --bg-2: #d3f1f2;
+}
+
+/* Full-page diagonal gradient, fixed so it doesn't scroll with content */
+.board-bg {
+  position: relative;
+  flex: 1;
+  min-height: 100%;
+  overflow-x: hidden;
+  background: linear-gradient(
+      160deg,
+      var(--bg-1, #beefd9),
+      var(--bg-2, #d3f1f2)
+    )
+    fixed;
+}
+
+/* Semi-transparent frosted header strip (applied to <header> inside .board-bg) */
+.board-bg > .board-page-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-panel-overlay);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+/* Ensure panels / cards keep solid surfaces on top of the gradient */
+.board-bg .bg-\[var\(--bg-panel\)\],
+.board-bg [class*="bg-panel"],
+.board-bg .rounded-\[var\(--radius-card\)\] {
+  background-color: var(--bg-panel) !important;
+}
+
+/* Background picker popover: desktop = fixed popover, mobile = bottom sheet */
+@media (max-width: 640px) {
+  .bg-picker-popover {
+    top: auto !important;
+    right: 0 !important;
+    left: 0 !important;
+    bottom: 0;
+    max-height: none !important;
+    max-width: 100%;
+    border-radius: 12px 12px 0 0;
+    overflow: hidden;
+  }
+  .bg-picker-popover > div {
+    width: 100%;
+    border-radius: 12px 12px 0 0;
+  }
+}
+
+/* ============================================================
+   Column status pill colors (§4.4)
+   Applied via data-status on <header> inside each column.
+   Each color = background pill for the column title.
+   ============================================================ */
+
+/* Color tokens for column status pills */
+:root {
+  --col-gray-bg: #eaecef;
+  --col-gray-fg: #5b6270;
+  --col-blue-bg: #e8f1fc;
+  --col-blue-fg: #1c69d4;
+  --col-orange-bg: #fef0e6;
+  --col-orange-fg: #c8580a;
+  --col-green-bg: #e6f7ee;
+  --col-green-fg: #1e8a4a;
+  --col-red-bg: #fde8e9;
+  --col-red-fg: #c0151d;
+}
+
+/* The column title button gets the pill look via its parent header's data-status */
+[data-status="gray"] .col-status-pill {
+  background: var(--col-gray-bg);
+  color: var(--col-gray-fg);
+}
+[data-status="blue"] .col-status-pill {
+  background: var(--col-blue-bg);
+  color: var(--col-blue-fg);
+}
+[data-status="orange"] .col-status-pill {
+  background: var(--col-orange-bg);
+  color: var(--col-orange-fg);
+}
+[data-status="green"] .col-status-pill {
+  background: var(--col-green-bg);
+  color: var(--col-green-fg);
+}
+[data-status="red"] .col-status-pill {
+  background: var(--col-red-bg);
+  color: var(--col-red-fg);
+}
+
+/* Left accent bar on the column container matching the status color */
+[data-status="gray"] .col-accent-bar {
+  background: var(--col-gray-fg);
+}
+[data-status="blue"] .col-accent-bar {
+  background: var(--col-blue-fg);
+}
+[data-status="orange"] .col-accent-bar {
+  background: var(--col-orange-fg);
+}
+[data-status="green"] .col-accent-bar {
+  background: var(--col-green-fg);
+}
+[data-status="red"] .col-accent-bar {
+  background: var(--col-red-fg);
+}
+
+/* ============================================================
+   Card drag & drop effects (§4.5)
+   ============================================================ */
+
+/* Ghost placeholder — dashed slot where the card originally was */
+li[data-placeholder="true"] {
+  min-height: 60px;
+  border-radius: var(--radius-card);
+  border: 2px dashed var(--border-strong);
+  background: var(--bg-hover);
+}
+
+/* Card hover — stronger border + shadow + slight lift */
+article.board-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 4px 12px rgba(16, 24, 40, 0.1);
+  transform: translateY(-1px);
+}
+
+/* Card at rest — smooth return */
+article.board-card {
+  transition:
+    transform 150ms ease-out,
+    box-shadow 150ms ease-out,
+    border-color 150ms ease-out;
+}
+
+/* Tilted drag image clone — class applied by onDragStart before setDragImage */
+.drag-tilt-clone {
+  transform: rotate(2deg) scale(1.02);
+  box-shadow: var(--shadow-drag);
+  opacity: 0.95;
+  pointer-events: none;
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
 }
