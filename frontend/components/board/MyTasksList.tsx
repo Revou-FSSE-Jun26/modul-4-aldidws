@@ -210,7 +210,7 @@ export function MyTasksList() {
                     {card.title}
                   </Link>
                   <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                    {card.labels.map((label) => (
+                    {card.labels?.map((label) => (
                       <LabelPill key={label.id} name={label.name} color={label.color} />
                     ))}
                     <DueDateBadge dueDate={card.due_date} now={now} />

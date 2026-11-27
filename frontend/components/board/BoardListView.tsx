@@ -127,7 +127,7 @@ export function BoardListView({ columns, sortBy, groupBy, onOpenCard }: BoardLis
                       {card.due_date ? formatDue(card.due_date) : null}
                     </td>
                     <td className="py-2 px-3">
-                      {card.labels.length > 0 ? (
+                      {card.labels && card.labels.length > 0 ? (
                         <span className="flex flex-wrap gap-1">
                           {card.labels.map((label) => (
                             <LabelPill key={label.id} name={label.name} color={label.color} />

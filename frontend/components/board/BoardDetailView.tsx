@@ -275,6 +275,7 @@ export function BoardDetailView({ boardId }: BoardDetailViewProps) {
   const labelUsage: Record<string, number> = {};
   for (const col of boardColumns) {
     for (const c of col.cards) {
+      if (!c.labels) continue;
       for (const l of c.labels) labelUsage[l.id] = (labelUsage[l.id] ?? 0) + 1;
     }
   }
@@ -591,7 +592,7 @@ export function BoardDetailView({ boardId }: BoardDetailViewProps) {
       ),
     );
     // Apply labels if any.
-    if (card.labels.length > 0) {
+    if (card.labels && card.labels.length > 0) {
       try {
         const withLabels = await setCardLabels(
           token as string,

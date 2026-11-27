@@ -324,9 +324,9 @@ export function BoardColumn({
                   boardName={boardName}
                   isDoneColumn={column.is_done ?? false}
                   meta={
-                    card.labels.length > 0 || card.due_date ? (
+                    (card.labels && card.labels.length > 0) || card.due_date ? (
                       <div className="flex flex-wrap items-center gap-1">
-                        {card.labels.map((label) => (
+                        {card.labels?.map((label) => (
                           <LabelPill key={label.id} name={label.name} color={label.color} />
                         ))}
                         {card.due_date && <DueDateBadge dueDate={card.due_date} now={now} />}

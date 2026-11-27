@@ -506,9 +506,9 @@ export function CardDetailModal({
             </select>
           </div>
           <LabelPicker
-            key={`labels:${card.id}:${card.labels.map((l) => l.id).join(",")}`}
+            key={`labels:${card.id}:${card.labels?.map((l) => l.id).join(",")}`}
             labels={boardLabels}
-            selectedIds={card.labels.map((l) => l.id)}
+            selectedIds={card.labels?.map((l) => l.id) ?? []}
             onApply={applyLabels}
           />
           <LabelManager
