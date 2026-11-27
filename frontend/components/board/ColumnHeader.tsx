@@ -2,15 +2,47 @@
 
 import { useId, useState } from "react";
 import { BaseBadge } from "@/components/shared/BaseBadge";
-import { BaseButton } from "@/components/shared/BaseButton";
+import { ActionMenu, type ActionMenuItem } from "@/components/shared/ActionMenu";
+import { COLUMN_COLORS } from "@/lib/columnColor";
+import type { ColumnColor } from "@/lib/types/api";
 
 export interface ColumnHeaderProps {
   title: string;
   cardCount: number;
+  /** While filters are active: cards shown and cards in the column ("x of y"). */
+  visibleCount?: number;
+  totalCount?: number;
   /** Called with the new trimmed name when the user commits an inline rename. */
   onRename?: (newTitle: string) => void;
   /** Called when the user activates the delete column action. */
   onColumnDelete?: () => void;
+  /** Column reorder handle. Omit to hide the handle. */
+  reorder?: ColumnReorderHandle;
+  /** Resolved status color, exposed as `data-status` for later styling. */
+  status?: ColumnColor;
+  /** Stored color choice (null = automatic). Marks the checked menu option. */
+  color?: ColumnColor | null;
+  /** Called when the user picks a status color; null means automatic. */
+  onColorChange?: (color: ColumnColor | null) => void;
+  /** Whether the column is a Done column, exposed as `data-done`. */
+  isDone?: boolean;
+  /** Called with the new Done flag when the user toggles it in the menu. */
+  onDoneChange?: (isDone: boolean) => void;
+  /** Disables the menu actions while a request is in flight. */
+  actionsDisabled?: boolean;
+  /** Called when the user activates the + button. Omit to hide the button. */
+  onAddTask?: () => void;
+  /** Receives the + button so the column can return focus to it. */
+  addTaskButtonRef?: React.Ref<HTMLButtonElement>;
+}
+
+export interface ColumnReorderHandle {
+  /** Used as `data-column-handle` so the board can restore focus after a move. */
+  columnId: string;
+  onDragStart: (e: React.DragEvent<HTMLElement>) => void;
+  onDragEnd: () => void;
+  /** -1 moves the column left, 1 moves it right. */
+  onMove: (direction: -1 | 1) => void;
 }
 
 const MAX_COLUMN_TITLE_LENGTH = 100;
@@ -23,9 +55,21 @@ const MAX_COLUMN_TITLE_LENGTH = 100;
 export function ColumnHeader({
   title,
   cardCount,
+  visibleCount,
+  totalCount,
   onRename,
   onColumnDelete,
+  reorder,
+  status,
+  color = null,
+  onColorChange,
+  isDone = false,
+  onDoneChange,
+  actionsDisabled = false,
+  onAddTask,
+  addTaskButtonRef,
 }: ColumnHeaderProps) {
+  const isFiltered = visibleCount !== undefined && totalCount !== undefined;
   const inputId = useId();
   const errorId = `${inputId}-error`;
   const [isEditing, setIsEditing] = useState(false);
@@ -37,6 +81,44 @@ export function ColumnHeader({
     setDraft(title);
     setError(null);
     setIsEditing(true);
+  }
+
+  const menuItems: ActionMenuItem[] = [];
+  if (onRename) {
+    menuItems.push({ id: "rename", label: "Rename", onSelect: startEditing });
+  }
+  if (onColorChange) {
+    const options: { value: ColumnColor | null; label: string }[] = [
+      { value: null, label: "Automatic" },
+      ...COLUMN_COLORS.map((c) => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) })),
+    ];
+    for (const option of options) {
+      menuItems.push({
+        id: `color-${option.value ?? "auto"}`,
+        label: option.label,
+        role: "menuitemradio",
+        checked: color === option.value,
+        value: option.value ?? "auto",
+        disabled: actionsDisabled,
+        onSelect: () => onColorChange(option.value),
+      });
+    }
+  }
+  if (onDoneChange) {
+    menuItems.push({
+      id: "done",
+      label: isDone ? "Unmark Done column" : "Mark as Done column",
+      disabled: actionsDisabled,
+      onSelect: () => onDoneChange(!isDone),
+    });
+  }
+  if (onColumnDelete) {
+    menuItems.push({
+      id: "delete",
+      label: "Delete column",
+      disabled: actionsDisabled,
+      onSelect: onColumnDelete,
+    });
   }
 
   function commitRename() {
@@ -74,8 +156,28 @@ export function ColumnHeader({
   }
 
   return (
-    <header className="flex items-center justify-between gap-2 px-1 pb-2">
+    <header data-status={status} data-done={String(isDone)} className="flex items-center justify-between gap-2 px-1 pb-2">
       <div className="flex min-w-0 flex-1 items-center gap-2">
+        {reorder && (
+          <button
+            type="button"
+            draggable
+            data-column-handle={reorder.columnId}
+            aria-label={`Reorder column ${title}`}
+            title="Drag, or press the left and right arrow keys, to reorder"
+            onDragStart={reorder.onDragStart}
+            onDragEnd={reorder.onDragEnd}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                e.preventDefault();
+                reorder.onMove(e.key === "ArrowLeft" ? -1 : 1);
+              }
+            }}
+            className="shrink-0 cursor-grab text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span aria-hidden="true">&#8942;&#8942;</span>
+          </button>
+        )}
         {isEditing ? (
           <div className="flex flex-1 flex-col gap-1">
             <label htmlFor={inputId} className="sr-only">
@@ -110,40 +212,38 @@ export function ColumnHeader({
             type="button"
             onClick={startEditing}
             aria-label={onRename ? `Rename column: ${title}` : title}
-            className="min-w-0 truncate text-left text-sm font-semibold text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="col-status-pill min-w-0 truncate rounded-[var(--radius-pill)] px-2 py-0.5 text-left text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             title={onRename ? "Click to rename" : undefined}
           >
             {title}
           </button>
         )}
 
-        <BaseBadge aria-label={`${cardCount} ${cardCount === 1 ? "card" : "cards"}`}>
-          {cardCount}
-        </BaseBadge>
+        {isFiltered ? (
+          <BaseBadge aria-label={`${visibleCount} of ${totalCount} cards shown`}>
+            {visibleCount} of {totalCount}
+          </BaseBadge>
+        ) : (
+          <BaseBadge aria-label={`${cardCount} ${cardCount === 1 ? "card" : "cards"}`}>
+            {cardCount}
+          </BaseBadge>
+        )}
       </div>
 
-      {onColumnDelete && (
-        <BaseButton
-          variant="secondary"
-          size="icon"
-          onClick={onColumnDelete}
-          aria-label={`Delete column: ${title}`}
-          className="shrink-0 !border-0 !bg-transparent text-muted-foreground hover:text-destructive"
+      {onAddTask && (
+        <button
+          type="button"
+          ref={addTaskButtonRef}
+          onClick={onAddTask}
+          aria-label={`Add task to top of ${title}`}
+          title="Add a task to the top of this column"
+          className="shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 16 16"
-            fill="currentColor"
-            className="h-4 w-4"
-            aria-hidden="true"
-          >
-            <path
-              fillRule="evenodd"
-              d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5ZM6.05 6a.75.75 0 0 1 .787.713l.275 5.5a.75.75 0 0 1-1.498.075l-.275-5.5A.75.75 0 0 1 6.05 6Zm3.9 0a.75.75 0 0 1 .712.787l-.275 5.5a.75.75 0 0 1-1.498-.075l.275-5.5A.75.75 0 0 1 9.95 6Z"
-              clipRule="evenodd"
-            />
-          </svg>
-        </BaseButton>
+          <span aria-hidden="true">+</span>
+        </button>
+      )}
+      {menuItems.length > 0 && (
+        <ActionMenu label={`Column actions for ${title}`} items={menuItems} />
       )}
     </header>
   );

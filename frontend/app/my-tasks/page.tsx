@@ -1,5 +1,8 @@
 import { Suspense } from "react";
+import { CheckSquare } from "lucide-react";
 import { MyTasksList } from "@/components/board/MyTasksList";
+import { BoardBgWrapper } from "@/components/board/BoardBgWrapper";
+import { PageHeader } from "@/components/shared/PageHeader";
 
 /**
  * My Tasks page — Server Component (no "use client", no useState).
@@ -13,44 +16,38 @@ import { MyTasksList } from "@/components/board/MyTasksList";
  */
 export default function MyTasksPage() {
   return (
-    <main className="flex-1 bg-background px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-3xl">
-        <header className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            My Tasks
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Cards you created, grouped by board.
-          </p>
-        </header>
-
-        <Suspense fallback={<MyTasksSkeleton />}>
-          <MyTasksList />
-        </Suspense>
-      </div>
-    </main>
+    <BoardBgWrapper className="flex flex-1 flex-col">
+      <PageHeader
+        title="My Tasks"
+        description="Cards you created, grouped by board."
+        icon={<CheckSquare size={16} strokeWidth={1.5} />}
+      />
+      <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-4xl">
+          <Suspense fallback={<MyTasksSkeleton />}>
+            <MyTasksList />
+          </Suspense>
+        </div>
+      </main>
+    </BoardBgWrapper>
   );
 }
 
 /** Skeleton shown while the client-side fetch is in flight. */
 function MyTasksSkeleton() {
   return (
-    <div className="flex flex-col gap-6" aria-busy="true" aria-label="Loading tasks">
+    <div className="flex flex-col gap-8" aria-busy="true" aria-label="Loading tasks">
+      {/* Stats skeleton */}
+      <div className="h-24 animate-pulse rounded-xl border border-border/50 bg-muted" aria-hidden="true" />
+      
+      {/* Task groups skeleton */}
       {Array.from({ length: 2 }).map((_, groupIdx) => (
-        <div
-           
-          key={groupIdx}
-          className="flex flex-col gap-3"
-          aria-hidden="true"
-        >
-          {/* Group heading skeleton */}
-          <div className="h-4 w-32 animate-pulse rounded bg-muted" />
-          {/* Card row skeletons */}
+        <div key={groupIdx} className="flex flex-col gap-4" aria-hidden="true">
+          <div className="h-6 w-48 animate-pulse rounded bg-muted" />
           {Array.from({ length: 3 }).map((_, cardIdx) => (
             <div
-               
               key={cardIdx}
-              className="h-14 animate-pulse rounded-md border border-border bg-muted"
+              className="h-16 animate-pulse rounded-xl border border-border/50 bg-muted"
             />
           ))}
         </div>

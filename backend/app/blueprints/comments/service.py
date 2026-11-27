@@ -10,12 +10,12 @@ Contains the business logic for comment operations.  Every function here MUST:
 
 import uuid
 
+from app.access import get_card_for_user
 from app.common.exceptions import CardNotFoundException, CommentNotFoundException, UnauthorizedCommentAccessError
 from sqlalchemy.orm import selectinload
 
 from app.blueprints.notifications.service import notify_comment_added
 from app.extensions import db
-from app.models.board import Board
 from app.models.board_column import BoardColumn
 from app.models.card import Card
 from app.models.card_comment import CardComment
@@ -27,24 +27,12 @@ from app.models.card_comment import CardComment
 
 
 def _get_card_for_user(current_user, card_id: uuid.UUID) -> Card:
-    """Return the card whose board is owned by *current_user*, or raise 404.
+    """Return a live card on a board the caller may access, or raise 404.
 
-    Joins Card → BoardColumn → Board so that the ownership check is a single
-    query and no card is returned for a board the caller does not own.
+    Commenting is open to every board member; the shared access layer keeps
+    the non-disclosing 404 contract.
     """
-    card = db.session.execute(
-        db.select(Card)
-        .join(Card.column)
-        .join(BoardColumn.board)
-        .where(Card.id == card_id)
-        .where(Board.owner_id == current_user.id)
-        .where(Card.deleted_at.is_(None))
-    ).scalar_one_or_none()
-
-    if card is None:
-        raise CardNotFoundException()
-
-    return card
+    return get_card_for_user(current_user, card_id)
 
 
 # ---------------------------------------------------------------------------
@@ -75,10 +63,14 @@ def create_comment(current_user, card_id: uuid.UUID, data: dict) -> CardComment:
         body=data["body"],
     )
 
+    board_id = db.session.execute(
+        db.select(BoardColumn.board_id).where(BoardColumn.id == card.column_id)
+    ).scalar_one()
+
     try:
         db.session.add(comment)
-        # The ownership join above guarantees the board owner is current_user.
-        notify_comment_added(current_user.id, card, comment, current_user)
+        # Notify every board member except the comment's author.
+        notify_comment_added(board_id, card, comment, current_user)
         db.session.commit()
     except Exception:
         db.session.rollback()

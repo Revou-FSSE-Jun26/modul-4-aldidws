@@ -3,11 +3,15 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { CheckSquare } from "lucide-react";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { listCards } from "@/lib/services/cardsService";
 import { ApiError } from "@/lib/errors";
 import { loginPath } from "@/lib/loginPath";
 import type { CardListItem } from "@/lib/types/api";
+import { useNow } from "@/hooks/useNow";
+import { DueDateBadge } from "@/components/board/DueDateBadge";
+import { LabelPill } from "@/components/board/LabelPill";
 import { BaseBadge } from "@/components/shared/BaseBadge";
 import { BaseButton } from "@/components/shared/BaseButton";
 
@@ -48,6 +52,7 @@ export function MyTasksList() {
   const router = useRouter();
   const pathname = usePathname();
   const { token, isAuthLoading } = useRequireAuth();
+  const now = useNow();
   const [state, setState] = useState<ListState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -141,12 +146,17 @@ export function MyTasksList() {
 
   if (state.items.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        You haven&apos;t created any cards yet.{" "}
-        <Link href="/" className="font-medium underline">
-          Go to your boards
-        </Link>
-      </p>
+      <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border/50 bg-muted/20 px-6 py-16 text-center">
+        <CheckSquare className="mb-4 h-12 w-12 text-muted-foreground/40" />
+        <h3 className="mb-2 text-base font-semibold text-foreground">No tasks yet</h3>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          You haven&apos;t created any cards yet.{" "}
+          <Link href="/" className="font-medium text-primary underline hover:text-primary/80">
+            Go to your boards
+          </Link>{" "}
+          to get started.
+        </p>
+      </div>
     );
   }
 
@@ -154,44 +164,79 @@ export function MyTasksList() {
   const hasMore = state.page * PER_PAGE < state.total;
 
   return (
-    <div className="flex flex-col gap-6">
-      {groups.map((group) => (
-        <section key={group.boardId} aria-label={group.boardName}>
-          <h2 className="mb-2 text-sm font-semibold text-foreground">
-            <Link href={`/boards/${group.boardId}`} className="hover:underline">
-              {group.boardName}
-            </Link>
-          </h2>
-          <ul className="flex list-none flex-col gap-2 p-0">
-            {group.cards.map((card) => (
-              <li
-                key={card.id}
-                className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2"
-              >
-                <Link
-                  href={`/boards/${card.board_id}`}
-                  className="min-w-0 truncate text-sm font-medium text-foreground hover:underline"
+    <div className="flex flex-col gap-8">
+      {/* Stats card */}
+      <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm px-6 py-4">
+        <div className="flex items-center gap-3">
+          <div className="rounded-lg bg-primary/10 p-2.5">
+            <CheckSquare className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-foreground">{state.total}</p>
+            <p className="text-sm text-muted-foreground">
+              {state.total === 1 ? "task" : "tasks"} created by you
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Task groups */}
+      <div className="flex flex-col gap-8">
+        {groups.map((group) => (
+          <section key={group.boardId} aria-label={group.boardName} className="flex flex-col gap-4">
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-foreground">
+                <Link 
+                  href={`/boards/${group.boardId}`} 
+                  className="hover:text-primary transition-colors hover:underline"
                 >
-                  {card.title}
+                  {group.boardName}
                 </Link>
-                <BaseBadge>{card.column_name}</BaseBadge>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+              </h2>
+              <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                {group.cards.length}
+              </span>
+            </div>
+            <ul className="flex list-none flex-col gap-3 p-0">
+              {group.cards.map((card) => (
+                <li
+                  key={card.id}
+                  className="group flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm px-4 py-3.5 transition-all hover:border-border hover:bg-card hover:shadow-sm"
+                >
+                  <Link
+                    href={`/boards/${card.board_id}`}
+                    className="min-w-0 flex-1 truncate text-sm font-medium text-foreground transition-colors group-hover:text-primary"
+                  >
+                    {card.title}
+                  </Link>
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                    {card.labels.map((label) => (
+                      <LabelPill key={label.id} name={label.name} color={label.color} />
+                    ))}
+                    <DueDateBadge dueDate={card.due_date} now={now} />
+                    <BaseBadge>{card.column_name}</BaseBadge>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
 
       {moreError && (
-        <p role="alert" className="text-xs text-destructive">
-          {moreError}
-        </p>
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3">
+          <p role="alert" className="text-sm text-destructive">
+            {moreError}
+          </p>
+        </div>
       )}
       {hasMore && (
-        <div>
+        <div className="flex justify-center">
           <BaseButton
             variant="secondary"
             disabled={isLoadingMore}
             onClick={() => void handleLoadMore()}
+            className="min-w-[140px]"
           >
             {isLoadingMore ? "Loading…" : "Load more"}
           </BaseButton>

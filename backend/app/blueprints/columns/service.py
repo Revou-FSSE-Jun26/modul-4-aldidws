@@ -12,10 +12,12 @@ import uuid
 
 from sqlalchemy import func
 
+from app.access import get_board_for_user, get_column_for_user
 from app.common.exceptions import (
     BoardNotFoundException,
     ColumnNotFoundException,
     ResourceConflictException,
+    ValidationException,
 )
 from app.extensions import db
 from app.models.board import Board
@@ -24,42 +26,22 @@ from app.models.card import Card
 
 
 # ---------------------------------------------------------------------------
-# Private helpers
+# Private helpers — delegate to the shared access layer
 # ---------------------------------------------------------------------------
 
 
 def _get_owned_board(board_id: uuid.UUID, current_user) -> Board:
-    """Return the board owned by *current_user* with *board_id*, or raise 404."""
-    board = db.session.execute(
-        db.select(Board).where(
-            Board.id == board_id,
-            Board.owner_id == current_user.id,
-        )
-    ).scalar_one_or_none()
+    """Return the board the caller may *write* to (owner only), or raise 404.
 
-    if board is None:
-        raise BoardNotFoundException()
-
-    return board
+    Column create/delete/reorder stay owner-only; a plain member receives the
+    same non-disclosing 404 as an unknown board.
+    """
+    return get_board_for_user(current_user, board_id, write=True)
 
 
 def _get_owned_column(column_id: uuid.UUID, current_user) -> BoardColumn:
-    """Return the column whose board is owned by *current_user*, or raise 404.
-
-    Joins BoardColumn → Board so that the ownership check is a single query
-    and no column is returned for a board the caller does not own.
-    """
-    col = db.session.execute(
-        db.select(BoardColumn)
-        .join(BoardColumn.board)
-        .where(BoardColumn.id == column_id)
-        .where(Board.owner_id == current_user.id)
-    ).scalar_one_or_none()
-
-    if col is None:
-        raise ColumnNotFoundException()
-
-    return col
+    """Return the column the caller may *write* to (board owner only), or 404."""
+    return get_column_for_user(current_user, column_id, write=True)
 
 
 def _renormalise_column_positions(board_id: uuid.UUID) -> None:
@@ -114,6 +96,8 @@ def create_column(current_user, board_id: uuid.UUID, data: dict) -> BoardColumn:
         board_id=board_id,
         name=data["name"],
         position=position,
+        color=data.get("color"),
+        is_done=data.get("is_done", False),
     )
 
     try:
@@ -150,6 +134,10 @@ def update_column(current_user, column_id: uuid.UUID, data: dict) -> BoardColumn
         col.name = data["name"]
     if "position" in data:
         col.position = data["position"]
+    if "color" in data:
+        col.color = data["color"]
+    if "is_done" in data:
+        col.is_done = data["is_done"]
 
     try:
         db.session.commit()
@@ -230,11 +218,24 @@ def reorder(
             not exist or does not belong to the specified board.
     """
     # Reuse the existing ownership helper — build a temporary user-like object
-    # from user_id so we don't need to re-query the User table.
+    # from user_id so we don't need to re-query the User table.  The access
+    # layer only ever reads ``.id``, so the shim is sufficient.
     class _User:
         id = user_id
 
     _get_owned_board(board_id, _User())
+
+    board_column_ids = set(
+        db.session.execute(
+            db.select(BoardColumn.id).where(BoardColumn.board_id == board_id)
+        ).scalars()
+    )
+    if not set(ordered_ids) <= board_column_ids:
+        raise ColumnNotFoundException()
+    if len(ordered_ids) != len(set(ordered_ids)) or set(ordered_ids) != board_column_ids:
+        raise ValidationException(
+            "ordered_ids must list every column of the board exactly once."
+        )
 
     for position, column_id in enumerate(ordered_ids):
         col = db.session.execute(

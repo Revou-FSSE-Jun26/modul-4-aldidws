@@ -10,17 +10,27 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/errors";
 import { computeCardOrder } from "@/lib/cardOrder";
-import { deleteCard, moveCard, updateCard } from "@/lib/services/cardsService";
+import {
+  deleteCard,
+  moveCard,
+  setCardLabels,
+  updateCard,
+} from "@/lib/services/cardsService";
+import { deleteLabel } from "@/lib/services/labelsService";
 import {
   createComment,
   deleteComment,
   listComments,
   updateComment,
 } from "@/lib/services/commentsService";
-import type { ApiComment, Card } from "@/lib/types/api";
+import { setCardAssignees } from "@/lib/services/membersService";
+import type { ApiComment, BoardMember, Card, Label } from "@/lib/types/api";
 import { BaseModal } from "@/components/shared/BaseModal";
 import { BaseButton } from "@/components/shared/BaseButton";
 import { CommentList, type Comment } from "@/components/board/CommentList";
+import { DueDateField } from "@/components/board/DueDateField";
+import { LabelManager } from "@/components/board/LabelManager";
+import { LabelPicker } from "@/components/board/LabelPicker";
 
 const MAX_TITLE_LENGTH = 255;
 const MAX_DESCRIPTION_LENGTH = 2000;
@@ -43,6 +53,22 @@ export interface CardDetailModalProps {
   onCardDeleted: (cardId: string) => void;
   /** Called after the server accepted a move made from the select. */
   onCardMoved: () => void;
+  boardId: string;
+  /** All labels of the board. */
+  boardLabels: Label[];
+  /** Number of cards that carry each label (by label id), for the delete message. */
+  labelUsage?: Record<string, number>;
+  /** Called after a label was created, changed or deleted so the board reloads. */
+  onLabelsChanged: () => void;
+  /**
+   * Board members, shown in the "Assignees" picker.  The picker is rendered
+   * only when *isBoardOwner* is true and the list is non-empty.
+   */
+  boardMembers?: BoardMember[];
+  /** True when the caller is the board owner. */
+  isBoardOwner?: boolean;
+  /** Called after an assignee set change so the board reloads. */
+  onCardAssigneesChanged?: () => void;
 }
 
 function toComment(c: ApiComment): Comment {
@@ -272,15 +298,28 @@ export function CardDetailModal({
   onCardUpdated,
   onCardDeleted,
   onCardMoved,
+  boardId,
+  boardLabels,
+  labelUsage = {},
+  onLabelsChanged,
+  boardMembers = [],
+  isBoardOwner = false,
+  onCardAssigneesChanged,
 }: CardDetailModalProps) {
   const { token, currentUser } = useAuth();
   const moveId = useId();
+  const priorityId = useId();
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [commentsError, setCommentsError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
+  const [isSavingPriority, setIsSavingPriority] = useState(false);
+  const [labelToDelete, setLabelToDelete] = useState<Label | null>(null);
+  const [isDeletingLabel, setIsDeletingLabel] = useState(false);
+  // Set once the label confirmation closed, so LabelManager can restore focus.
+  const [focusRestore, setFocusRestore] = useState<{ labelId: string | null } | null>(null);
 
   // Load comments each time the modal opens for a card.
   useEffect(() => {
@@ -315,9 +354,87 @@ export function CardDetailModal({
       await moveCard(token, card.id, { column_id: targetColumnId, order });
       onCardMoved();
     } catch (err: unknown) {
-      setActionError(messageOf(err, "Could not move the card."));
+      // The server re-validates the move rule; a 403 means the caller is
+      // not the owner, the card's creator, or a tagged user.
+      const fallback =
+        err instanceof ApiError && err.isForbidden
+          ? "You can't move this card (only its owner or a tagged member can)."
+          : "Could not move the card.";
+      setActionError(messageOf(err, fallback));
     } finally {
       setIsMoving(false);
+    }
+  }
+
+  async function saveDueDate(dueDate: string | null) {
+    if (!token) throw new Error("You must be signed in to edit cards.");
+    const updated = await updateCard(token, card.id, { due_date: dueDate });
+    onCardUpdated(updated);
+  }
+
+  async function savePriority(value: string) {
+    if (!token) return;
+    const priority =
+      value === "low" || value === "medium" || value === "high" ? value : null;
+    setIsSavingPriority(true);
+    setActionError(null);
+    try {
+      const updated = await updateCard(token, card.id, { priority });
+      onCardUpdated(updated);
+    } catch (err: unknown) {
+      setActionError(messageOf(err, "Could not update the priority."));
+    } finally {
+      setIsSavingPriority(false);
+    }
+  }
+
+  async function applyLabels(labelIds: string[]) {
+    if (!token) throw new Error("You must be signed in to edit cards.");
+    try {
+      const updated = await setCardLabels(token, card.id, labelIds);
+      onCardUpdated(updated);
+    } catch (err: unknown) {
+      // A label may have been deleted elsewhere: refresh the board's labels.
+      if (err instanceof ApiError && err.isNotFound) onLabelsChanged();
+      throw err;
+    }
+  }
+
+  async function saveAssignees(userId: string[]) {
+    if (!token) return;
+    try {
+      const updated = await setCardAssignees(token, card.id, userId);
+      onCardUpdated({ ...card, assignee_ids: userId } as Card);
+      onCardAssigneesChanged?.();
+    } catch (err: unknown) {
+      setActionError(messageOf(err, "Could not update card assignees."));
+    }
+  }
+
+  function closeLabelConfirm(labelId: string | null) {
+    setLabelToDelete(null);
+    setFocusRestore({ labelId });
+  }
+
+  async function handleConfirmLabelDelete() {
+    if (!token || !labelToDelete) return;
+    const target = labelToDelete;
+    setIsDeletingLabel(true);
+    setActionError(null);
+    try {
+      await deleteLabel(token, target.id);
+      closeLabelConfirm(null);
+      onLabelsChanged();
+    } catch (err: unknown) {
+      closeLabelConfirm(target.id);
+      setActionError(
+        err instanceof ApiError && err.isNotFound
+          ? "That label no longer exists."
+          : messageOf(err, "Could not delete the label."),
+      );
+      if (err instanceof ApiError && err.isNotFound) onLabelsChanged();
+    } finally {
+      setIsDeletingLabel(false);
     }
   }
 
@@ -358,13 +475,91 @@ export function CardDetailModal({
       {/* The card dialog is hidden while the confirm dialog is up so that
           Escape and focus handling only apply to one dialog at a time. */}
       <BaseModal
-        isOpen={isOpen && !confirmingDelete}
+        isOpen={isOpen && !confirmingDelete && labelToDelete === null}
         onClose={onClose}
         title={card.title}
         maxWidth="max-w-xl"
       >
         <div className="flex flex-col gap-4">
           <EditCardForm key={card.id} card={card} onSaved={onCardUpdated} />
+          <DueDateField
+            key={`due:${card.id}:${card.due_date ?? ""}`}
+            value={card.due_date}
+            onSave={(iso) => saveDueDate(iso)}
+            onRemove={() => saveDueDate(null)}
+          />
+          <div className="flex flex-col gap-1">
+            <label htmlFor={priorityId} className="text-sm font-medium text-foreground">
+              Priority
+            </label>
+            <select
+              id={priorityId}
+              value={card.priority ?? ""}
+              disabled={isSavingPriority}
+              onChange={(e) => void savePriority(e.target.value)}
+              className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <option value="">No priority</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <LabelPicker
+            key={`labels:${card.id}:${card.labels.map((l) => l.id).join(",")}`}
+            labels={boardLabels}
+            selectedIds={card.labels.map((l) => l.id)}
+            onApply={applyLabels}
+          />
+          <LabelManager
+            boardId={boardId}
+            labels={boardLabels}
+            onChanged={onLabelsChanged}
+            onRequestDelete={setLabelToDelete}
+            restoreFocus={focusRestore !== null}
+            restoreFocusLabelId={focusRestore?.labelId ?? null}
+          />
+
+          {isBoardOwner && boardMembers.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium text-foreground">
+                Who can move this card
+              </span>
+              <div
+                role="group"
+                aria-label="Card assignees"
+                className="flex flex-wrap gap-2"
+              >
+                {boardMembers
+                  .filter((m) => m.role !== "owner" || m.user_id === currentUser?.id)
+                  .map((m) => {
+                    const checked =
+                      card.assignee_ids?.includes(m.user_id) ?? false;
+                    return (
+                      <label
+                        key={m.user_id}
+                        className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            const current = card.assignee_ids ?? [];
+                            const next = checked
+                              ? current.filter((id) => id !== m.user_id)
+                              : [...current, m.user_id];
+                            void saveAssignees(next);
+                          }}
+                          disabled={isSavingPriority}
+                          className="h-3.5 w-3.5 accent-[var(--brand)]"
+                        />
+                        <span className="text-[13px]">{m.name ?? m.email}</span>
+                      </label>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-col gap-1">
             <label htmlFor={moveId} className="text-sm font-medium text-foreground">
@@ -421,6 +616,35 @@ export function CardDetailModal({
               }
             />
           )}
+        </div>
+      </BaseModal>
+
+      <BaseModal
+        isOpen={isOpen && labelToDelete !== null}
+        onClose={() => {
+          if (!isDeletingLabel) closeLabelConfirm(labelToDelete?.id ?? null);
+        }}
+        title={`Delete label "${labelToDelete?.name ?? ""}"?`}
+        description={`It will be removed from ${labelToDelete ? (labelUsage[labelToDelete.id] ?? 0) : 0} ${
+          labelToDelete && (labelUsage[labelToDelete.id] ?? 0) === 1 ? "card" : "cards"
+        }.`}
+        maxWidth="max-w-sm"
+      >
+        <div className="flex justify-end gap-2">
+          <BaseButton
+            variant="secondary"
+            disabled={isDeletingLabel}
+            onClick={() => closeLabelConfirm(labelToDelete?.id ?? null)}
+          >
+            Cancel
+          </BaseButton>
+          <BaseButton
+            variant="destructive"
+            disabled={isDeletingLabel}
+            onClick={() => void handleConfirmLabelDelete()}
+          >
+            Confirm delete
+          </BaseButton>
         </div>
       </BaseModal>
 

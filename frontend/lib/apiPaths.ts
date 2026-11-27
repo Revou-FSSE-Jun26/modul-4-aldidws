@@ -19,11 +19,13 @@ export const apiPaths = {
   register: () => "/api/auth/register",
 
   me: () => "/api/users/me",
+  workspaceSummary: () => "/api/users/me/summary",
 
   boards: () => "/api/boards",
   board: (boardId: string) => `/api/boards/${enc(boardId)}`,
   boardColumns: (boardId: string) => `/api/boards/${enc(boardId)}/columns`,
 
+  reorderColumns: (boardId: string) => `/api/boards/${enc(boardId)}/columns/reorder`,
   column: (columnId: string) => `/api/columns/${enc(columnId)}`,
 
   columnCards: (columnId: string) => `/api/v1/columns/${enc(columnId)}/cards`,
@@ -37,6 +39,13 @@ export const apiPaths = {
   card: (cardId: string) => `/api/v1/cards/${enc(cardId)}`,
   cardPosition: (cardId: string) => `/api/v1/cards/${enc(cardId)}/position`,
 
+  boardLabels: (boardId: string) => `/api/boards/${enc(boardId)}/labels`,
+  boardMembers: (boardId: string) => `/api/boards/${enc(boardId)}/members`,
+  boardMember: (boardId: string, userId: string) =>
+    `/api/boards/${enc(boardId)}/members/${enc(userId)}`,
+  label: (labelId: string) => `/api/labels/${enc(labelId)}`,
+  cardLabels: (cardId: string) => `/api/v1/cards/${enc(cardId)}/labels`,
+  cardAssignees: (cardId: string) => `/api/v1/cards/${enc(cardId)}/assignees`,
   cardComments: (cardId: string) => `/api/cards/${enc(cardId)}/comments`,
   comment: (commentId: string) => `/api/comments/${enc(commentId)}`,
 

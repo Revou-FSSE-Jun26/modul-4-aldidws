@@ -19,8 +19,10 @@ SCHEMA_MODULES = [
     "app.blueprints.boards.schema",
     "app.blueprints.columns.schema",
     "app.blueprints.cards.schema",
+    "app.blueprints.labels.schema",
     "app.blueprints.comments.schema",
     "app.blueprints.users.schema",
+    "app.blueprints.members.schema",
 ]
 
 

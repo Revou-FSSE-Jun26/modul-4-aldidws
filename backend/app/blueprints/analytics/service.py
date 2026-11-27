@@ -4,6 +4,7 @@ import uuid
 
 from sqlalchemy import func
 
+from app.access import get_board_for_user
 from app.common.exceptions import BoardNotFoundException
 from app.extensions import db
 from app.models.board import Board
@@ -12,21 +13,13 @@ from app.models.card import Card
 
 
 def board_summary(current_user, board_id: uuid.UUID) -> dict:
-    """Return aggregate card counts for *board_id*, owned by *current_user*.
+    """Return aggregate card counts for *board_id*, which the caller can access.
 
     Raises:
-        BoardNotFoundException: When the board does not exist or is not owned
-            by *current_user*.
+        BoardNotFoundException: When the board does not exist or the caller is
+            not a member (non-disclosing 404).
     """
-    board = db.session.execute(
-        db.select(Board).where(
-            Board.id == board_id,
-            Board.owner_id == current_user.id,
-        )
-    ).scalar_one_or_none()
-
-    if board is None:
-        raise BoardNotFoundException()
+    board = get_board_for_user(current_user, board_id)
 
     total = db.session.execute(
         db.select(func.count(Card.id))

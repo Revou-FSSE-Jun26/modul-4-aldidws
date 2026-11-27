@@ -98,6 +98,8 @@ def _register_blueprints(app: Flask) -> None:
     from app.blueprints.notifications import notifications_bp
     from app.blueprints.analytics import analytics_bp
     from app.blueprints.users import users_bp
+    from app.blueprints.labels import labels_bp
+    from app.blueprints.members import members_boards, members_cards
 
     # NOTE (technical debt): cards_bp and columns_bp are registered under
     # /api/v1/ while every other blueprint uses /api/ without a version prefix.
@@ -116,3 +118,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(notifications_bp, url_prefix="/api/notifications")
     app.register_blueprint(analytics_bp, url_prefix="/api/analytics")
     app.register_blueprint(users_bp, url_prefix="/api/users")
+    app.register_blueprint(labels_bp, url_prefix="/api")
+    # The two members blueprints already carry their url_prefix in __init__.py.
+    app.register_blueprint(members_boards)
+    app.register_blueprint(members_cards)

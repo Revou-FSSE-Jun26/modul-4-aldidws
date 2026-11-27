@@ -56,7 +56,7 @@ def test_list_returns_only_own_cards_with_context(client, world):
     assert first["board_name"] == "Alpha"
     assert first["column_name"] == "Todo"
     assert set(first) == {
-        "id", "column_id", "owner_id", "title", "description", "order",
+        "id", "column_id", "owner_id", "title", "description", "order", "due_date", "priority", "labels",
         "deleted_at", "created_at", "updated_at",
         "board_id", "board_name", "column_name",
     }

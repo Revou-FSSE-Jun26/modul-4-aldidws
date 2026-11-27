@@ -32,10 +32,10 @@ A criterion tagged `[Plan]` that depends on a pending decision says `Assumption 
 ## 2. User roles
 
 - **Guest:** can open `/login` and `/register`. Cannot reach any other page or API route.
-- **Member:** an authenticated user. Owns boards. Is the only person who can see or change them. Role value `member`.
+- **Member:** an authenticated user. Can own boards and be a member of other users' boards. Role value `member`.
 - **Admin:** the `users.role` column allows `admin`, but no feature uses it. Admin features are out of scope.
 
-There is no board sharing. A board has exactly one owner and no members.
+**Board sharing model:** A board has one `owner_id` (the user who created it) and zero or more `board_members` (role `member`). The `board_members` table determines read access: any user in `board_members` (including the owner, who is implicitly a member) can read the board and its cards. The owner can invite registered accounts by email (`POST /api/boards/{board_id}/members`), list members (`GET /api/boards/{board_id}/members`), and remove members (`DELETE /api/boards/{board_id}/members/{member_user_id}`). A member can modify or move their own cards or cards assigned to them (`card_assignees`). The `owner_id` field is kept for compatibility but access checks use `board_members`.
 
 ## 3. Glossary
 
@@ -139,16 +139,16 @@ Status: backend Done except R4.5. UI Planned.
 
 #### Acceptance criteria
 
-- **R4.1** WHEN a Member submits `title` (1 to 255 characters after trimming, not blank) and optional `description` (up to 2000 characters, default empty) to `POST /api/v1/columns/{column_id}/cards`, THE backend SHALL create the card at the end of the column (`max(order) + 1.0`, or 0.0 if none), set `owner_id` to the caller and return 201 with `id`, `column_id`, `owner_id`, `title`, `description`, `order`, `deleted_at`, `created_at`, `updated_at`. `[BE]`
+- **R4.1** WHEN a Member submits `title` (1 to 255 characters after trimming, not blank) and optional `description` (up to 2000 characters, default empty) to `POST /api/v1/columns/{column_id}/cards`, THE backend SHALL create the card at the end of the column (`max(order) + 1.0`, or 0.0 if none), set `owner_id` to the caller and return 201 with `id`, `column_id`, `owner_id`, `title`, `description`, `order`, `priority`, `due_date`, `labels[]`, `assignee_ids[]`, `can_move`, `deleted_at`, `created_at`, `updated_at`. `[BE]`
 - **R4.2** IF the title is blank or longer than 255 characters, or the description is longer than 2000 characters, THEN THE backend SHALL return 400 `VALIDATION_ERROR` and create nothing. `[Done]`
-- **R4.3** WHEN a Member sends `PATCH /api/v1/cards/{id}` with `title` and/or `description`, THE backend SHALL validate as in R4.1, update the card and return 200. `[BE]`
-- **R4.4** THE backend SHALL reject `priority` and `status` in card requests with 400 `VALIDATION_ERROR` until the model has those fields. `[Plan]` Current: both are accepted if well-formed and silently ignored. See D9.
+- **R4.3** WHEN a Member sends `PATCH /api/v1/cards/{id}` with `title`, `description`, `priority` (optional, `low|medium|high` or `null`), `due_date` (R15), or `label_ids` (R16), THE backend SHALL validate, update the card and return 200. `[BE]`
+- **R4.4** THE backend SHALL accept `priority` (`low|medium|high` or `null`) in card requests. THE backend SHALL reject `status` with 400 `VALIDATION_ERROR` (the column is the status; cards have no `status` field). `[Done]` Current: `priority` is validated with `validate.OneOf(["low", "medium", "high"])` and stored. `status` is not a field on the card model.
 - **R4.5** WHEN a Member deletes a card, THE backend SHALL set `deleted_at`, return 204, and exclude the card from board reads, comment access, search and analytics. `[Plan]` Assumption pending confirmation: D7. Current: `DELETE /api/v1/cards/{id}` removes the row (`db.session.delete`). The `deleted_at` column exists and only analytics filters on it.
-- **R4.6** THE frontend SHALL provide, on the board page: an "Add card" control in each column (title required, description optional), a card detail dialog to edit title and description, and a Delete card control with confirmation. `[Plan]` Current: `AddCardForm` and `CardDetailModal` exist but are not mounted.
+- **R4.6** THE frontend SHALL provide, on the board page: an "Add card" control in each column (title required, description optional), a card detail dialog to edit title, description, priority, due date, labels, and assignees, and a Delete card control with confirmation. `[Plan]` Current: `AddCardForm` and `CardDetailModal` exist but are not mounted.
 - **R4.7** IF a failed create or edit request returns an error, THEN THE frontend SHALL keep the typed values and show the error. `[Plan]`
 - **R4.8** THE backend SHALL return 404 `CARD_NOT_FOUND` for a card whose board the caller does not own, and 404 `COLUMN_NOT_FOUND` when creating in a column the caller does not own. `[Done]`
 
-Cards have no assignee, priority or status. The column acts as the status (D8, D9). Due dates and labels are added by R15 and R16.
+Cards have `priority` (R4.4), `due_date` (R15), `labels[]` (R16), and `assignee_ids[]` (R18). The column acts as the status (D8, D9).
 
 ### Requirement 5: Move and reorder cards
 
@@ -261,7 +261,7 @@ Status: Planned. Assumption pending confirmation: D9, D13.
 #### Acceptance criteria
 
 - **R12.1** THE backend SHALL store users, boards, columns, cards, comments, notifications and refresh tokens in PostgreSQL through SQLAlchemy, with schema changes in Alembic migrations. `[Done]` (one migration, `e75e73442f21`, in `backend/migrations/versions`)
-- **R12.2** THE backend SHALL commit before returning a success response and SHALL roll back on failure. `[Done]`
+- **R12.2** THE backend SHALL commit before returning a success response and SHALL roll back on failure. THE backend SHALL also create one notification for the board owner whenever a comment is posted on a card, including the owner's own comments. IF the board has other members, THE notification SHALL also be sent to those members. `[Done]`
 - **R12.3** THE backend SHALL enforce non-negative `position` and `order` with check constraints and index `(board_id, position)` and `(column_id, order)`. `[Done]`
 - **R12.4** WHEN a card is moved, THE backend SHALL update the destination and source ordering in one transaction. `[Done]`
 - **R12.5** THE database SHALL enforce unique `(owner_id, lower(name))` on boards. `[Plan]` Current: service check only, so two concurrent creates can both pass.
@@ -371,6 +371,25 @@ Status: Planned (phase 3). Design: `design.md` section 17.3. Decisions: section 
 - **R17.14** THE filter functions SHALL be pure, take `now` as an argument and SHALL NOT change their input. `[Plan]`
 - **R17.15** WHEN a filter is active, THE filter bar SHALL contain a status text "N of M cards shown" (`role="status"`, polite). It SHALL be updated only after typing has paused for 300 ms. `[Plan]`
 
+### Requirement 18: Board members and card assignees
+
+**User story:** As a board owner, I want to invite other registered users to my board and assign cards to them, so that we can collaborate.
+
+Status: backend Done. UI: `BoardMembersPanel` and assignee select in card dialog Done.
+
+#### Acceptance criteria
+
+- **R18.1** WHEN a board owner sends `POST /api/boards/{board_id}/members` with `email` (a registered user), THE backend SHALL add that user to `board_members` with role `member` and return 201 with `{user_id, role}`. IF the email is not a registered user, THE backend SHALL return 404 `BOARD_NOT_FOUND`. IF the user is already a member, THE backend SHALL return 409 `RESOURCE_CONFLICT`. `[Done]`
+- **R18.2** WHEN a board member (owner or member) requests `GET /api/boards/{board_id}/members`, THE backend SHALL return 200 with a list of `{user_id, email, name, role}` ordered by `created_at`. IF the board does not exist or the caller is not a member, THE backend SHALL return 404 `BOARD_NOT_FOUND`. `[Done]`
+- **R18.3** WHEN a board owner sends `DELETE /api/boards/{board_id}/members/{member_user_id}`, THE backend SHALL remove that user from `board_members` and return 204. IF the user is the owner, THE backend SHALL return 409 `RESOURCE_CONFLICT` (the owner cannot be removed). IF the user is not a member, THE backend SHALL return 404 `BOARD_NOT_FOUND`. `[Done]`
+- **R18.4** WHEN a board member sends `PATCH /api/v1/cards/{card_id}/assignees` with `user_ids` (a list of UUIDs, max 10), THE backend SHALL replace the card's assignee set with exactly that list in one transaction and return 200 with the card object including `assignee_ids`. IF any id in `user_ids` is not a member of the card's board, THE backend SHALL return 404 `CARD_NOT_FOUND` and change nothing. IF `user_ids` contains more than 10 ids, THE backend SHALL return 400 `VALIDATION_ERROR`. `[Done]`
+- **R18.5** EVERY card object returned by the backend SHALL contain `assignee_ids` (a list of UUIDs, `[]` when none): create, update, position, board read, card list. `[Done]`
+- **R18.6** THE backend SHALL create one notification for the board owner whenever a comment is posted on a card, including the owner's own comments. IF the board has other members, the notification SHALL also be sent to those members. `[Done]`
+- **R18.7** THE board page SHALL show a `BoardMembersPanel` with: a list of current members (avatar, name, email, role badge), an "Invite" button that opens a dialog with an email input, and a "Remove" button on each member row (disabled for the owner). `[Done]`
+- **R18.8** THE card detail dialog SHALL show an "Assignees" section with a multi-select list of board members. The list SHALL work with Arrow keys, Space and Enter, SHALL close on Escape without saving, and SHALL send the chosen set once through an Apply control as exactly `{"user_ids": [...]}`. `[Done]`
+- **R18.9** AFTER a member is invited or removed, THE frontend SHALL reload the board so that the member list and card assignees reflect the current state. `[Done]`
+- **R18.10** THE database change SHALL add two new tables (`board_members`, `card_assignees`) and SHALL have a working downgrade. `[Done]`
+
 ## 6. Non-functional requirements
 
 ### N1 Security
@@ -429,9 +448,9 @@ Status: Planned (phase 3). Design: `design.md` section 17.3. Decisions: section 
 
 ## 8. Out of scope for the MVP
 
-- Board sharing, members and roles (single owner only).
+- Board sharing with external users (only registered accounts can be invited).
 - Admin features.
-- Task attributes: status, priority, sorting, assignee (D8, D9). Due dates, labels and the board filter are in scope through R15 to R17. Overdue notifications, reminders, recurring dates, label sharing across boards and server-side filtering stay out of scope.
+- Task attributes: status (column is the status), sorting. Priority and assignee are in scope (R4.4, R18). Due dates, labels and the board filter are in scope through R15 to R17. Overdue notifications, reminders, recurring dates, label sharing across boards and server-side filtering stay out of scope.
 - "My Tasks" page (D8).
 - Activity log (D12).
 - Notifications in the UI and their producers (D6).
@@ -440,7 +459,7 @@ Status: Planned (phase 3). Design: `design.md` section 17.3. Decisions: section 
 - Server-side session refresh and logout (R9.4).
 - Real-time updates, attachments, integrations.
 
-Note: Board sharing, members and roles are explicitly out of scope for the MVP. A board has exactly one owner and no members. This is confirmed in section 2 ("There is no board sharing. A board has exactly one owner and no members.") and in `design.md` section 1 ("Every resource belongs to one user through its board").
+Note: Board members and assignees are in scope. A board can have multiple `board_members` (role `owner` or `member`), and cards can have multiple assignees via `card_assignees`. The owner can invite registered accounts by email, list members, and remove members. Members can modify or move their own cards or cards assigned to them.
 
 ## 9. Assumptions
 
@@ -490,7 +509,7 @@ The product owner has not answered these. The default was chosen so work can sta
 The project assessment requires a notification bell with an unread count, a working My Tasks page and a search that finds cards. Three defaults above did not allow that, so they were changed. The table rows are kept as the original record. Where a criterion in section 5 still describes the old default, this note wins.
 
 - **D6 changed.** Notifications are in scope. The backend creates one notification for the board owner whenever a comment is posted on one of their cards, including the owner's own comments, because a board has exactly one owner. `GET /api/notifications` adds `meta.unread_count`. The bell in the header shows that count, and clicking a notification marks it read. The bell refreshes every 30 seconds, so the count can lag by up to 30 seconds.
-- **D8 changed.** `/my-tasks` is kept, not removed. It lists the cards the caller created (`GET /api/v1/cards?mine=true`), grouped by board, with links to each board. There is still no assignee field.
+- **D8 changed.** `/my-tasks` is kept, not removed. It lists the cards the caller created (`GET /api/v1/cards?mine=true`), grouped by board, with links to each board. Cards show their priority (`low|medium|high`) and due date when set.
 - **D13 changed.** Search runs on the backend: `GET /api/v1/cards?search=&board_id=` matches title and description, case-insensitive, at most 100 characters, only over boards the caller owns. The board page uses it with `board_id` set.
 - D2, D3 and D7 were implemented with the default shown in the table. D1 is unchanged: board delete is still a hard database cascade and there is no board delete UI.
 

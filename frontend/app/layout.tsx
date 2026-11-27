@@ -1,19 +1,14 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "@/context/AuthContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { Header } from "@/components/shared/Header";
+import { AppShell } from "@/components/shared/AppShell";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  variable: "--font-inter",
 });
 
 export const metadata: Metadata = {
@@ -38,13 +33,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${inter.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">
+      <head>
+        {/* No-flash: set data-board-bg on <html> before first paint so the
+            correct gradient is applied without a colour flash on load. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var m=location.pathname.match(/^\\/boards\\/([^\\/]+)/);var v=m?localStorage.getItem('board-bg-'+m[1]):null;if(!v)v=localStorage.getItem('board-bg');if(v)document.documentElement.setAttribute('data-board-bg',v);}catch(e){}})();`,
+          }}
+        />
+      </head>
+      <body className="h-full overflow-hidden bg-[var(--bg-page)] font-[var(--font-inter)]">
         <AuthProvider>
-          <Header />
           <ErrorBoundary>
-            {children}
+            <AppShell>
+              {children}
+            </AppShell>
           </ErrorBoundary>
         </AuthProvider>
 

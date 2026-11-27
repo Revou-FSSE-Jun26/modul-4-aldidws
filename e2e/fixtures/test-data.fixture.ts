@@ -38,6 +38,10 @@ export interface SeededBoard {
   id: string;
   name: string;
   columns: Record<string, string>;
+  /** Card id by card title. */
+  cards: Record<string, string>;
+  /** Bearer token of the seeding login (API calls only, never stored in the browser). */
+  token: string;
 }
 
 /**
@@ -67,10 +71,35 @@ export async function seedBoard(
   for (const columnName of spec.columns) {
     columns[columnName] = await create(`/api/boards/${boardId}/columns`, { name: columnName });
   }
+  const cards: Record<string, string> = {};
   for (const [columnName, titles] of Object.entries(spec.cards ?? {})) {
     for (const title of titles) {
-      await create(`/api/v1/columns/${columns[columnName]}/cards`, { title });
+      cards[title] = await create(`/api/v1/columns/${columns[columnName]}/cards`, { title });
     }
   }
-  return { id: boardId, name: spec.name, columns };
+  return { id: boardId, name: spec.name, columns, cards, token };
+}
+
+/** Creates a board label and attaches it to cards, all through the backend API. */
+export async function seedLabel(
+  request: APIRequestContext,
+  board: SeededBoard,
+  label: { name: string; color: string },
+  cardTitles: string[],
+): Promise<string> {
+  const headers = { Authorization: `Bearer ${board.token}` };
+  const created = await request.post(`${API_URL}/api/boards/${board.id}/labels`, {
+    data: label,
+    headers,
+  });
+  if (!created.ok()) throw new Error(`Creating the label failed with HTTP ${created.status()}`);
+  const labelId: string = (await created.json()).data.id;
+  for (const title of cardTitles) {
+    const attached = await request.put(`${API_URL}/api/v1/cards/${board.cards[title]}/labels`, {
+      data: { label_ids: [labelId] },
+      headers,
+    });
+    if (!attached.ok()) throw new Error(`Attaching the label failed with HTTP ${attached.status()}`);
+  }
+  return labelId;
 }

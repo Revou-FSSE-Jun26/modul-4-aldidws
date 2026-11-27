@@ -12,6 +12,7 @@
     "e2e:ui": "playwright test -c ../e2e/playwright.config.ts --ui"
   },
   "dependencies": {
+    "lucide-react": "^1.80.0",
     "next": "16.4.6",
     "react": "19.3.0",
     "react-dom": "19.3.0",

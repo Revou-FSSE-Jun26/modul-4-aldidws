@@ -1,15 +1,17 @@
 """
 Board model.
 
-A board is the top-level container for a user's work.  Every board is
-privately owned; the MVP has no sharing between accounts.  Columns and,
-through them, cards cascade-delete when a board is removed.
+A board is the top-level container for a user's work.  It is owned by a
+single user but can have additional member accounts (see
+``board_members``); the owner is always represented by an ``owner``-role
+membership row.  Columns and, through them, cards cascade-delete when a
+board is removed.
 """
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Uuid, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
@@ -63,6 +65,13 @@ class Board(db.Model):
         nullable=False,
     )
 
+    is_favorite: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="false",
+        default=False,
+    )
+
     # ------------------------------------------------------------------
     # Timestamps
     # ------------------------------------------------------------------
@@ -98,6 +107,20 @@ class Board(db.Model):
         # SELECT before the database enforces the constraint.
         passive_deletes=True,
     )
+    labels: Mapped[list["Label"]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        "Label",
+        back_populates="board",
+        lazy="select",
+        passive_deletes=True,
+    )
+
+    members: Mapped[list["BoardMember"]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        "BoardMember",
+        lazy="select",
+        # Database CASCADE (board_members.board_id) handles physical
+        # deletion of membership rows when the board is removed.
+        passive_deletes=True,
+    )
 
     # ------------------------------------------------------------------
     # Helpers
@@ -108,6 +131,7 @@ class Board(db.Model):
             "id": str(self.id),
             "owner_id": str(self.owner_id),
             "name": self.name,
+            "is_favorite": self.is_favorite,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }

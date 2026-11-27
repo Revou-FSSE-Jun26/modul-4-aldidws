@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, useEffect, useId, useState } from "react";
+import { User as UserIcon } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { updateProfile as updateProfileRequest } from "@/lib/services/usersService";
@@ -8,6 +9,8 @@ import { ApiError } from "@/lib/errors";
 import type { User } from "@/lib/types/api";
 import { BaseButton } from "@/components/shared/BaseButton";
 import { getInitials } from "@/lib/initials";
+import { BoardBgWrapper } from "@/components/board/BoardBgWrapper";
+import { PageHeader } from "@/components/shared/PageHeader";
 
 const MAX_NAME_LENGTH = 255;
 /** Show the polite remaining-characters message only this close to the limit. */
@@ -105,135 +108,160 @@ function ProfileForm({ user, token }: { user: User; token: string }) {
   }
 
   const inputClasses =
-    "rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
+    "rounded-lg border bg-background px-4 py-2.5 text-sm text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-6">
+    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-8">
       {submitError && (
         <div
           role="alert"
-          className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3.5 text-sm text-destructive"
         >
           {submitError}
         </div>
       )}
-      <p role="status" aria-live="polite" className="text-sm text-green-800">
-        {status}
-      </p>
-
-      <div className="flex items-center gap-4">
+      {status && (
         <div
-          aria-hidden="true"
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary text-base font-semibold text-primary-foreground"
+          role="status"
+          aria-live="polite"
+          className="rounded-lg border border-green-300 bg-green-50 px-4 py-3.5 text-sm text-green-800"
         >
-          {getInitials(user.name, user.email)}
+          {status}
         </div>
-        <div className="min-w-0">
-          <p className="truncate text-base font-medium text-foreground">
-            {user.name?.trim() || user.email}
-          </p>
-          <p className="truncate text-sm text-muted-foreground">{user.email}</p>
-        </div>
-      </div>
+      )}
 
-      <div className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-muted-foreground">User ID</span>
-        <p className="truncate font-mono text-sm text-foreground">{user.id}</p>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor={`${baseId}-name`} className="text-sm font-medium text-foreground">
-          Name
-        </label>
-        <input
-          id={`${baseId}-name`}
-          type="text"
-          value={name}
-          maxLength={MAX_NAME_LENGTH + 1}
-          disabled={isSubmitting}
-          autoComplete="name"
-          onChange={(e) => {
-            setName(e.target.value);
-            setFieldErrors((f) => ({ ...f, name: undefined }));
-          }}
-          aria-invalid={fieldErrors.name !== undefined}
-          aria-describedby={
-            fieldErrors.name
-              ? `${baseId}-name-count ${baseId}-name-error`
-              : `${baseId}-name-count`
-          }
-          className={`${inputClasses} ${fieldErrors.name ? "border-destructive" : "border-border"}`}
-        />
-        <p id={`${baseId}-name-count`} className="text-xs text-muted-foreground">
-          {name.length} / {MAX_NAME_LENGTH}
-        </p>
-        {name.length >= NAME_WARN_THRESHOLD && (
-          <p role="status" className="sr-only">
-            {Math.max(MAX_NAME_LENGTH - name.length, 0)} characters remaining
-          </p>
-        )}
-        {fieldErrors.name && (
-          <p id={`${baseId}-name-error`} role="alert" className="text-xs text-destructive">
-            {fieldErrors.name}
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor={`${baseId}-email`} className="text-sm font-medium text-foreground">
-          Email
-        </label>
-        <input
-          id={`${baseId}-email`}
-          type="email"
-          value={user.email}
-          readOnly
-          className={`${inputClasses} border-border bg-muted`}
-        />
-        <p className="text-xs text-muted-foreground">Email cannot be changed.</p>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <label
-          htmlFor={`${baseId}-timezone`}
-          className="text-sm font-medium text-foreground"
-        >
-          Timezone
-        </label>
-        <select
-          id={`${baseId}-timezone`}
-          value={timezone}
-          disabled={isSubmitting}
-          onChange={(e) => {
-            setTimezone(e.target.value);
-            setFieldErrors((f) => ({ ...f, timezone: undefined }));
-          }}
-          aria-invalid={fieldErrors.timezone !== undefined}
-          aria-describedby={fieldErrors.timezone ? `${baseId}-timezone-error` : undefined}
-          className={`${inputClasses} ${fieldErrors.timezone ? "border-destructive" : "border-border"}`}
-        >
-          {timezoneOptions(user.timezone).map((tz) => (
-            <option key={tz} value={tz}>
-              {tz}
-            </option>
-          ))}
-        </select>
-        {fieldErrors.timezone && (
-          <p
-            id={`${baseId}-timezone-error`}
-            role="alert"
-            className="text-xs text-destructive"
+      {/* User identity card */}
+      <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-6">
+        <div className="flex items-center gap-4">
+          <div
+            aria-hidden="true"
+            className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/70 text-xl font-bold text-primary-foreground shadow-sm"
           >
-            {fieldErrors.timezone}
-          </p>
-        )}
+            {getInitials(user.name, user.email)}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-lg font-semibold text-foreground">
+              {user.name?.trim() || user.email}
+            </p>
+            <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+          </div>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 pt-2">
+      {/* Account details section */}
+      <div className="flex flex-col gap-6">
+        <div>
+          <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Account Details
+          </h3>
+          <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">User ID</span>
+              <p className="truncate rounded-lg border border-border/50 bg-muted/30 px-3 py-2 font-mono text-sm text-foreground">
+                {user.id}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label htmlFor={`${baseId}-name`} className="text-sm font-medium text-foreground">
+                Display Name
+              </label>
+              <input
+                id={`${baseId}-name`}
+                type="text"
+                value={name}
+                maxLength={MAX_NAME_LENGTH + 1}
+                disabled={isSubmitting}
+                autoComplete="name"
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setFieldErrors((f) => ({ ...f, name: undefined }));
+                }}
+                aria-invalid={fieldErrors.name !== undefined}
+                aria-describedby={
+                  fieldErrors.name
+                    ? `${baseId}-name-count ${baseId}-name-error`
+                    : `${baseId}-name-count`
+                }
+                className={`${inputClasses} ${fieldErrors.name ? "border-destructive" : "border-border"}`}
+              />
+              <div className="flex items-center justify-between">
+                <p id={`${baseId}-name-count`} className="text-xs text-muted-foreground">
+                  {name.length} / {MAX_NAME_LENGTH} characters
+                </p>
+              </div>
+              {name.length >= NAME_WARN_THRESHOLD && (
+                <p role="status" className="sr-only">
+                  {Math.max(MAX_NAME_LENGTH - name.length, 0)} characters remaining
+                </p>
+              )}
+              {fieldErrors.name && (
+                <p id={`${baseId}-name-error`} role="alert" className="text-xs text-destructive">
+                  {fieldErrors.name}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label htmlFor={`${baseId}-email`} className="text-sm font-medium text-foreground">
+                Email Address
+              </label>
+              <input
+                id={`${baseId}-email`}
+                type="email"
+                value={user.email}
+                readOnly
+                className={`${inputClasses} border-border/50 bg-muted/50 cursor-not-allowed`}
+              />
+              <p className="text-xs text-muted-foreground">Email address cannot be changed.</p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label
+                htmlFor={`${baseId}-timezone`}
+                className="text-sm font-medium text-foreground"
+              >
+                Timezone
+              </label>
+              <select
+                id={`${baseId}-timezone`}
+                value={timezone}
+                disabled={isSubmitting}
+                onChange={(e) => {
+                  setTimezone(e.target.value);
+                  setFieldErrors((f) => ({ ...f, timezone: undefined }));
+                }}
+                aria-invalid={fieldErrors.timezone !== undefined}
+                aria-describedby={fieldErrors.timezone ? `${baseId}-timezone-error` : undefined}
+                className={`${inputClasses} ${fieldErrors.timezone ? "border-destructive" : "border-border"}`}
+              >
+                {timezoneOptions(user.timezone).map((tz) => (
+                  <option key={tz} value={tz}>
+                    {tz}
+                  </option>
+                ))}
+              </select>
+              {fieldErrors.timezone && (
+                <p
+                  id={`${baseId}-timezone-error`}
+                  role="alert"
+                  className="text-xs text-destructive"
+                >
+                  {fieldErrors.timezone}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex flex-wrap items-center gap-3 border-t border-border/50 pt-6">
         <BaseButton
           type="submit"
           disabled={isSubmitting || !isDirty}
           aria-describedby={!isDirty ? `${baseId}-save-help` : undefined}
+          className="min-w-[120px]"
         >
           {isSubmitting ? "Saving…" : "Save changes"}
         </BaseButton>
@@ -245,7 +273,7 @@ function ProfileForm({ user, token }: { user: User; token: string }) {
           Reset
         </BaseButton>
         {!isDirty && (
-          <p id={`${baseId}-save-help`} className="text-xs text-muted-foreground">
+          <p id={`${baseId}-save-help`} className="text-sm text-muted-foreground">
             No changes to save
           </p>
         )}
@@ -263,30 +291,29 @@ export default function ProfilePage() {
   const { currentUser } = useAuth();
 
   return (
-    <main className="flex-1 bg-background px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-lg">
-        <header className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Profile
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Update your account details.
-          </p>
-        </header>
-
-        {isAuthLoading || !token || !currentUser ? (
-          <div
-            className="flex flex-col gap-4"
-            aria-busy="true"
-            aria-label="Loading profile"
-          >
-            <div className="h-16 animate-pulse rounded-md border border-border bg-muted" />
-            <div className="h-16 animate-pulse rounded-md border border-border bg-muted" />
-          </div>
-        ) : (
-          <ProfileForm user={currentUser} token={token} />
-        )}
-      </div>
-    </main>
+    <BoardBgWrapper className="flex flex-1 flex-col">
+      <PageHeader
+        title="Profile"
+        description="Update your account details."
+        icon={<UserIcon size={16} strokeWidth={1.5} />}
+      />
+      <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-2xl">
+          {isAuthLoading || !token || !currentUser ? (
+            <div
+              className="flex flex-col gap-6"
+              aria-busy="true"
+              aria-label="Loading profile"
+            >
+              <div className="h-32 animate-pulse rounded-xl border border-border/50 bg-muted" />
+              <div className="h-20 animate-pulse rounded-xl border border-border/50 bg-muted" />
+              <div className="h-20 animate-pulse rounded-xl border border-border/50 bg-muted" />
+            </div>
+          ) : (
+            <ProfileForm user={currentUser} token={token} />
+          )}
+        </div>
+      </main>
+    </BoardBgWrapper>
   );
 }

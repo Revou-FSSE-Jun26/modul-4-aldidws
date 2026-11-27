@@ -237,6 +237,56 @@ A task is done only when:
   - A new dependency (`argon2-cffi` or `bcrypt`) needs the review required by `development-workflow.md` section 6. Existing Werkzeug hashes are verified and rehashed on the next successful login.
   - Tests: new hash prefix, old hash still logs in and is upgraded.
 
+### Phase 5: Due dates, labels and board filter
+
+Added 2026-11-24 from `.agents/tasks/kanban-features/brief.md`. Requirements R15 to R17, decisions D14 to D21, design section 17. Every task is `not-started`. The phases run in order, and each phase must leave `pytest`, `npx jest`, `npx tsc --noEmit`, `npm run lint` and the local Playwright suite green before the next starts. Definition of done in section 1.1 applies. No task commits, pushes or deploys.
+
+- [x] **B14. Card due date: model, migration, schema, serialisation** (M). Status: done. Depends: none.
+  - Refs: R15.1 to R15.11. Routes: 13, 14, 6, 16, 26. Design: 17.1, 17.4.
+  - Change: `cards.due_date` in `app/models/card.py`; migration `add_cards_due_date` (nullable, no default, working downgrade, hand-reviewed SQL); `due_date` in `CreateCardSchema` and `UpdateCardSchema` with the overflow-safe range check (year first, then conversion inside `try/except OverflowError`, then re-check) and UTC normalisation in `load`; `app/utils/__init__.py` and `app/utils/time.py` `format_utc`; `create_card` and `update_card` (omitted versus `null`); `card_to_dict`. Update Swagger docstrings and `docs/api/README.md`.
+  - Tests: `backend/tests/api/test_card_due_date.py` (201, 200, null clears, omitted unchanged, bad string, date only (400 and `details.due_date`), naive, year 1999 and 2101, `9999-12-31T23:59:59-05:00` and `0001-01-01T00:00:00+05:00` (400, not 500), `+07:00` converted, unknown field, 401, other user's card 404, persistence, move keeps value); create `backend/tests/integration/` (with `__init__.py` if the other folders have one) and the `migration_app` fixture of design 17.4 (temporary database via `CREATE DATABASE`, visible skip reported as "not verified"); `backend/tests/integration/test_due_date_migration.py` (upgrade, downgrade, upgrade; no autogenerate diff); existing board and list route tests assert `due_date`; `backend/tests/contract/test_frontend_payloads.py` and `docs/api/frontend-request-payloads.json` gain `{due_date}` and `{due_date: null}`.
+  - Done when: the full backend suite passes with the final count reported (baseline 168).
+
+- [x] **F14. Due date UI: helper, badge, dialog field, My Tasks** (M). Status: done. Depends: B14.
+  - Refs: R15.12 to R15.18. Design: 17.1.
+  - Change: `lib/types/api.ts`, `lib/dueDate.ts`, `hooks/useNow.ts`, `components/board/DueDateBadge.tsx`, `components/board/DueDateField.tsx`, `CardDetailModal`, `BoardCard`, `BoardColumn` (pass `now`), `BoardDetailView`, `MyTasksList`, `lib/services/cardsService.ts`. Reuse `BaseButton` and `BaseBadge` (`overdue` = `danger`, `soon` = `warning`, `upcoming` = `default`; `BaseBadge` unchanged). `BoardColumn` builds the `meta` node for `BoardCard`, and `BoardCard` renders `meta` outside its `aria-label` button (design 17.1). `MyTasksList` renders the badge directly in each row `<li>` with `flex-wrap` (it does not use `BoardCard`). Update typed `Card` and `BoardDetail` test fixtures (`due_date: null`) so `npx tsc --noEmit` stays green. No raw hex, no restyle.
+  - Tests: `lib/__tests__/dueDate.test.ts`, `hooks/__tests__/useNow.test.tsx` (fake timers), `DueDateBadge.test.tsx`, `CardDetailModal.test.tsx` (exact payloads), `BoardCard.test.tsx` (badge not inside the `aria-label` button, click still opens), `MyTasksList.test.tsx` (past date shows Overdue), `lib/services/__tests__/contract.test.ts`.
+  - Done when: jest total reported (baseline 191 in 24 suites), `npx tsc --noEmit`, `npm run lint` and `npm run build` pass.
+
+- [x] **E2. E2E: set and clear a due date** (S). Status: done. Depends: B14, F14.
+  - Refs: R15.12, R15.13, R15.16. Files: `e2e/tests/due-dates.spec.ts`, extend `e2e/pages/BoardPage.ts`.
+  - Test: set a due date in the dialog, reload (log in again, R9.1; the token is in memory only), see the badge, clear it, see no badge. Unique data per test, no `waitForTimeout`.
+
+- [x] **B15. Labels: models, migration, blueprint, serialisation** (L). Status: done. Depends: B14.
+  - Refs: R16.1 to R16.15. Routes: 27 to 31, plus 6, 13, 14, 16, 26 (card `labels`, board `labels`). Design: 17.2, 17.4.
+  - Change: `app/models/label.py`, `Card.labels`, migration `add_labels_and_card_labels` (`down_revision` = the B14 revision); `app/blueprints/labels/` (routes, schema, service) registered once at `/api`; `LabelNotFoundException`; `cards/service.get_owned_card`; `selectinload(Card.labels)` in the board read and `list_cards`; `labels` in `card_to_dict` and `board_detail_to_dict`; explicit constraint names from design 17.2 (`pk_labels`, `fk_labels_board_id_boards`, `pk_card_labels`, `fk_card_labels_card_id_cards`, `fk_card_labels_label_id_labels`, `ck_labels_color`, `ck_labels_name_not_blank`, `uq_labels_board_id_lower_name`, `ix_card_labels_label_id`); rewrite the query-count test so it counts `FROM boards`, `FROM board_columns`, `FROM cards`, `FROM card_labels` and `FROM labels` and asserts 5 (two data sizes, plus 200 labels), with the same pair for `list_cards`; create `backend/tests/security/` and the `make_label` helpers in `conftest.py`. Swagger docstrings and `docs/api/README.md`.
+  - Tests: `backend/tests/api/test_label_routes.py`, `test_card_labels.py`, `unit/test_label_service.py`, `integration/test_label_database.py`, `integration/test_label_migration.py` (also compares `pg_indexes` for the `lower(name)` index), `security/test_authorization.py` (routes 27 to 31), contract samples. Cases listed in design section 13.4.
+  - Done when: the full backend suite passes with the final count reported, and `flask db migrate` shows no pending difference.
+
+- [x] **F15. Labels UI: pills, picker, manager, colours** (L). Status: done. Depends: B15, F14.
+  - Refs: R16.16 to R16.20. Design: 17.2.
+  - Change: `lib/types/api.ts`, `lib/apiPaths.ts`, `lib/services/labelsService.ts`, `cardsService.setCardLabels`, `lib/labelColors.ts`, CSS variables in `app/globals.css`, `LabelPill`, `LabelPicker`, `LabelManager`, `CardDetailModal`, `BoardCard` (meta outside the button), `MyTasksList` (pills in the row `<li>`), `BoardDetailView` (reload after label changes; `ViewState.success.labels`). Backend: `get_board_detail` returns `(board, columns, cards_by_column, labels)` and `board_detail_to_dict` takes `labels` (design 17.2); `set_card_labels` leaves `Card.updated_at` unchanged.
+  - Tests: `labelColors.test.ts` (contrast of the 8 pairs, ratios reported), `LabelPill.test.tsx`, `MyTasksList.test.tsx` (two labels show both names), `LabelPicker.test.tsx` (keyboard, Escape, exact `{label_ids}`), `LabelManager.test.tsx` (delete opens a `BaseModal` `Delete label "X"?` with "It will be removed from N cards.", focus returns to that label's Delete button), `labelsService.test.ts` (exact payloads), contract tests.
+  - Done when: jest, `tsc`, lint and build pass; a search finds no hex value in `frontend/components`.
+
+- [x] **E3. E2E: create a label and attach it** (S). Status: done. Depends: B15, F15.
+  - Refs: R16.17, R16.18, R16.20. Files: `e2e/tests/labels.spec.ts`, `e2e/pages/` additions.
+  - Test: create a label, attach it to a card, reload and log in again (R9.1), see the pill (text and colour name).
+
+- [x] **F16. Board filter: functions, URL state, filter bar, shortcut** (L). Status: done. Depends: F14, F15.
+  - Refs: R17.1 to R17.15. Design: 17.3. No backend change.
+  - Change: `lib/filterCards.ts`, `lib/filterParams.ts`, `hooks/useBoardFilters.ts`, `hooks/useFilterShortcut.ts`, `components/board/FilterBar.tsx`, `ColumnHeader` (`visibleCount`, `totalCount`, "x of y"), `BoardColumn` (`dragEnabled`; "No cards in this column." only for a column with no cards), `BoardDetailView` (one `role="status"` empty message), `app/boards/[id]/page.tsx` (`Suspense`). The global `SearchBar` is not changed.
+  - Tests: `filterCards.test.ts`, `filterParams.test.ts`, `useBoardFilters.test.tsx` (no `router.replace` for an unknown label id before the board loads), `useFilterShortcut.test.tsx`, `FilterBar.test.tsx` (300 ms status debounce with fake timers), `ColumnHeader.test.tsx`, `BoardColumn.test.tsx` (no drag while filtered), `BoardDetailView.test.tsx` (hidden cards not rendered, counts, empty message, Clear, URL sync).
+  - Done when: jest, `tsc`, lint and build pass.
+
+- [x] **E4. E2E: filter and mobile layout** (S). Status: done. Depends: F16.
+  - Refs: R17.3, R17.8, R17.12. Files: `e2e/tests/board-filter.spec.ts`, `e2e/pages/` additions.
+  - Test: filter by label and keyword, see only matching cards, clear (after any reload, log in again, R9.1); at 375 px with the filter bar open the document has no horizontal scroll. Run the whole suite on chromium and the mobile project (baseline 18 passed) and report the real result. Do not run Playwright against production.
+
+- [x] **X2. Documentation and evidence for R15 to R17** (S). Status: done. Depends: after each phase.
+  - Refs: `structure.md` section 12. Files: `docs/api/README.md`, `docs/api/frontend-request-payloads.json`, `README.md` (feature list: only what is built and verified), `docs/reports/guideline-violations.md` (only real violations found, recount the summary tables), `specs/CHANGELOG.md` (replace the "planned" evidence with measured counts), tick the tasks above.
+  - Done when: the CHANGELOG evidence line states only results that were actually produced.
+
 ## 3. Dependency order
 
 ```mermaid
@@ -268,47 +318,57 @@ flowchart TD
 
 Suggested order: T0, then B11, B3, B1 and F1 in parallel, then B2, B5, B6, B7, B8, B9, B12, then F2, F3, F4, F5, F6, F8, F7, F9, F10, F11, F12, then B10, C1, E1, X1, then P1, then the planned P items.
 
+Phase 5 order (fixed by the product owner): B14, F14, E2, then B15, F15, E3, then F16, E4, with X2 after each phase.
+
 First usable milestone: B3, B1, F1, F2, F4, F5, F6. A user can then create a board, add columns and cards, and see them after logging in again.
 
 ## 4. Coverage of existing routes and pages
 
-Every route in `design.md` section 5.2 and every page has a task or an explicit "no change".
+Every route in `design.md` section 5.2 and every page has a task or an explicit "no change". Routes 27 to 31 are defined in `design.md` section 17.2 (tasks B15, F15).
 
-| Route / page                                | Task or note                                                                   |
-| ------------------------------------------- | ------------------------------------------------------------------------------ |
-| 1 `POST /api/auth/register`                 | No change. Tests exist. C1 adds a payload contract test. P1 moves the prefix.  |
-| 2 `POST /api/auth/login`                    | B7, B12, P7. P1 moves the prefix.                                              |
-| 3 `GET /api/health`                         | No change. Tests exist.                                                        |
-| 4 `POST /api/boards`                        | B9, B10. F2 builds the UI.                                                     |
-| 5 `GET /api/boards`                         | No change. B10 adds isolation tests.                                           |
-| 6 `GET /api/boards/{id}`                    | B1 (response change), B11.                                                     |
-| 7 `PATCH /api/boards/{id}`                  | B9, B10. F9 builds the UI.                                                     |
-| 8 `DELETE /api/boards/{id}`                 | B4. F9 builds the UI.                                                          |
-| 9 `POST /api/boards/{id}/columns`           | B10. F5 builds the UI.                                                         |
-| 10 `PATCH /api/columns/{id}`                | B10. F5.                                                                       |
-| 11 `DELETE /api/columns/{id}`               | B2. F5.                                                                        |
-| 12 `PATCH /api/boards/{id}/columns/reorder` | B10. F5.                                                                       |
-| 13 `POST /api/v1/columns/{id}/cards`        | B8. F6.                                                                        |
-| 14 `PATCH /api/v1/cards/{id}`               | B8. F7.                                                                        |
-| 15 `DELETE /api/v1/cards/{id}`              | B3. F7.                                                                        |
-| 16 `PATCH /api/v1/cards/{id}/position`      | B5. F7 (move-to select), F8.                                                   |
-| 17 `GET /api/cards/{id}/comments`           | B3 (deleted cards), F7.                                                        |
-| 18 `POST /api/cards/{id}/comments`          | F7. Tests exist.                                                               |
-| 19 `PATCH /api/comments/{id}`               | B6. F7.                                                                        |
-| 20 `DELETE /api/comments/{id}`              | B6. F7.                                                                        |
-| 21 `GET /api/users/me`                      | B10. F10.                                                                      |
-| 22 `PATCH /api/users/me`                    | B10. F10.                                                                      |
-| 23 `GET /api/notifications`                 | B10 (tests only). No UI change (F13).                                          |
-| 24 `PATCH /api/notifications/{id}/read`     | B10 (tests only). No UI change (F13).                                          |
-| 25 `GET /api/analytics/boards/{id}/summary` | B10 (tests only). No UI (D11).                                                 |
-| 26 `GET /api/v1/cards` (added, D8 and D13)  | B13. F11 (search), F12 (My Tasks).                                             |
-| Extra alias URLs (design section 5.3)       | P1 removes them.                                                               |
-| Page `/`                                    | F2.                                                                            |
-| Page `/login`                               | No change. F1 changes how `AuthContext.login` sends the request.               |
-| Page `/register`                            | No change. Tests exist for the backend. A frontend payload test comes from C1. |
-| Page `/boards/[id]`                         | F4 to F9, F11.                                                                 |
-| Page `/profile`                             | F3 (guard), F10.                                                               |
-| Page `/my-tasks`                            | F12 (kept by decision D8, see F12).                                            |
+| Route / page                                 | Task or note                                                                   |
+| -------------------------------------------- | ------------------------------------------------------------------------------ |
+| 1 `POST /api/auth/register`                  | No change. Tests exist. C1 adds a payload contract test. P1 moves the prefix.  |
+| 2 `POST /api/auth/login`                     | B7, B12, P7. P1 moves the prefix.                                              |
+| 3 `GET /api/health`                          | No change. Tests exist.                                                        |
+| 4 `POST /api/boards`                         | B9, B10. F2 builds the UI.                                                     |
+| 5 `GET /api/boards`                          | No change. B10 adds isolation tests.                                           |
+| 6 `GET /api/boards/{id}`                     | B1 (response change), B11.                                                     |
+| 7 `PATCH /api/boards/{id}`                   | B9, B10. F9 builds the UI.                                                     |
+| 8 `DELETE /api/boards/{id}`                  | B4. F9 builds the UI.                                                          |
+| 9 `POST /api/boards/{id}/columns`            | B10. F5 builds the UI.                                                         |
+| 10 `PATCH /api/columns/{id}`                 | B10. F5.                                                                       |
+| 11 `DELETE /api/columns/{id}`                | B2. F5.                                                                        |
+| 12 `PATCH /api/boards/{id}/columns/reorder`  | B10. F5.                                                                       |
+| 13 `POST /api/v1/columns/{id}/cards`         | B8. F6.                                                                        |
+| 14 `PATCH /api/v1/cards/{id}`                | B8. F7.                                                                        |
+| 15 `DELETE /api/v1/cards/{id}`               | B3. F7.                                                                        |
+| 16 `PATCH /api/v1/cards/{id}/position`       | B5. F7 (move-to select), F8.                                                   |
+| 17 `GET /api/cards/{id}/comments`            | B3 (deleted cards), F7.                                                        |
+| 18 `POST /api/cards/{id}/comments`           | F7. Tests exist.                                                               |
+| 19 `PATCH /api/comments/{id}`                | B6. F7.                                                                        |
+| 20 `DELETE /api/comments/{id}`               | B6. F7.                                                                        |
+| 21 `GET /api/users/me`                       | B10. F10.                                                                      |
+| 22 `PATCH /api/users/me`                     | B10. F10.                                                                      |
+| 23 `GET /api/notifications`                  | B10 (tests only). No UI change (F13).                                          |
+| 24 `PATCH /api/notifications/{id}/read`      | B10 (tests only). No UI change (F13).                                          |
+| 25 `GET /api/analytics/boards/{id}/summary`  | B10 (tests only). No UI (D11).                                                 |
+| 26 `GET /api/v1/cards` (added, D8 and D13)   | B13. F11 (search), F12 (My Tasks).                                             |
+| 13, 14, 16 (due date field)                  | B14 (backend), F14 (UI), E2.                                                   |
+| 6, 26 (`due_date`, `labels`, board `labels`) | B14, B15 (backend), F14, F15 (UI).                                             |
+| 27 `GET /api/boards/{id}/labels`             | B15. F15 (`LabelManager`, `LabelPicker`). F16 reads the labels from route 6.   |
+| 28 `POST /api/boards/{id}/labels`            | B15. F15. E3.                                                                  |
+| 29 `PATCH /api/labels/{id}`                  | B15. F15.                                                                      |
+| 30 `DELETE /api/labels/{id}`                 | B15. F15.                                                                      |
+| 31 `PUT /api/v1/cards/{id}/labels`           | B15. F15. E3.                                                                  |
+| Board filter (no route)                      | F16. E4.                                                                       |
+| Extra alias URLs (design section 5.3)        | P1 removes them.                                                               |
+| Page `/`                                     | F2.                                                                            |
+| Page `/login`                                | No change. F1 changes how `AuthContext.login` sends the request.               |
+| Page `/register`                             | No change. Tests exist for the backend. A frontend payload test comes from C1. |
+| Page `/boards/[id]`                          | F4 to F9, F11.                                                                 |
+| Page `/profile`                              | F3 (guard), F10.                                                               |
+| Page `/my-tasks`                             | F12 (kept by decision D8, see F12).                                            |
 
 ## 5. Notes
 

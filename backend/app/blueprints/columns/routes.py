@@ -53,6 +53,12 @@ def create_column(current_user, board_id):
               position:
                 type: number
                 example: 1
+              color:
+                type: string
+                nullable: true
+                enum: [gray, blue, orange, green, red]
+              is_done:
+                type: boolean
     responses:
       201:
         description: Column created successfully.
@@ -106,6 +112,13 @@ def update_column(current_user, column_id):
               name:
                 type: string
                 example: In Progress
+              color:
+                type: string
+                nullable: true
+                enum: [gray, blue, orange, green, red]
+                description: null resets to the position-based color.
+              is_done:
+                type: boolean
     responses:
       200:
         description: Updated column data.

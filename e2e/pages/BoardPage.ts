@@ -27,6 +27,21 @@ export class BoardPage {
     return this.page.getByRole("button", { name: `Open card: ${title}`, exact: true });
   }
 
+  /** The due date badge ("Overdue", "Due soon" or "Due <date>") of a card, if it has one. */
+  dueBadge(title: string): Locator {
+    return this.page
+      .locator("li")
+      .filter({ has: this.card(title) })
+      .getByText(/^(Overdue|Due )/);
+  }
+  /** The pill with a label name on a card (outside the open dialog). */
+  labelPill(title: string, name: string): Locator {
+    return this.page
+      .locator("li")
+      .filter({ has: this.card(title) })
+      .getByText(name, { exact: true });
+  }
+
   cardIn(column: string, title: string): Locator {
     return this.column(column).getByRole("button", { name: `Open card: ${title}`, exact: true });
   }
@@ -46,7 +61,8 @@ export class BoardPage {
   }
 
   async deleteColumn(name: string): Promise<void> {
-    await this.page.getByRole("button", { name: `Delete column: ${name}` }).click();
+    await this.page.getByRole("button", { name: `Column actions for ${name}` }).click();
+    await this.page.getByRole("menuitem", { name: "Delete column" }).click();
     await this.page.getByRole("button", { name: "Confirm delete" }).click();
   }
 

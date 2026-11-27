@@ -32,29 +32,29 @@ and **not committed or deployed yet**; until it is, the deployed site shows the 
 | Role       | Capabilities                                                                                                                                                           |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Guest**  | Register a new account; log in to an existing account.                                                                                                                 |
-| **Member** | Create and use their own boards, columns and cards; drag and drop cards; add, edit and delete their own comments; see notifications; search cards; edit their profile. |
+| **Member** | Create and use their own boards, columns and cards; drag and drop cards; add, edit and delete their own comments; see notifications; search cards; edit their profile; be a member of other users' boards and assign cards. |
 
-There is no board sharing: every board has exactly one owner. The `role` field on a user
-exists but no feature depends on it.
+**Board sharing model:** A board has one `owner_id` (the user who created it) and zero or more `board_members` (role `member`). The owner can invite registered accounts by email, list members, and remove members. Any member can read the board and its cards. A member can modify or move their own cards or cards assigned to them (`card_assignees`). The `owner_id` field is kept for compatibility, but access checks use `board_members` (see `backend/app/access.py`).
 
-Note: Board sharing, members, and roles are explicitly out of scope for the MVP. A board
-has exactly one owner and no members. This is confirmed in `specs/requirements.md` section 2
-("There is no board sharing. A board has exactly one owner and no members.") and in
-`specs/design.md` section 1 ("Every resource belongs to one user through its board").
+The `role` field on a user (value `member` or `admin`) exists but no feature depends on it.
 
 ### Core Features
 
 - **JWT Authentication** — registration and login. The access token is kept in memory only, so a page reload asks you to log in again.
-- **Auth Pages** — login and register use a two-column layout with a brand panel (left) and form card (right). The brand panel shows the app logo, name, and tagline on desktop; it is hidden on mobile.
+- **Auth Pages** — login and register use a full-viewport gradient background with a centered form card (max-width ~400px).
 - **Kanban Boards** — create boards, add, rename and delete columns, add, edit, move and delete cards.
+- **Board Members** — invite registered accounts by email, list members, remove members; assign cards to members (`POST/GET/DELETE /api/boards/{board_id}/members`, `PATCH /api/v1/cards/{card_id}/assignees`).
+- **Card Priority** — set a priority on a card (`low|medium|high`) in the card dialog.
 - **Drag-and-Drop** — native HTML5 drag with a Float `order`, optimistic update and rollback on error. On touch screens use "Move to column" in the card dialog.
+- **Kanban/List View** — toggle between Kanban and List view on the board page.
+- **Board Background** — pick a background color or gradient for the board (`BackgroundPicker`).
 - **Comments** — per-card comments with add, edit and delete by the author.
-- **Notifications** — the board owner gets one notification per new comment; the header bell shows the unread count and refreshes every 30 seconds.
+- **Notifications** — the board owner and all members get one notification per new comment; the header bell shows the unread count and refreshes every 30 seconds.
 - **Inbox** — dedicated page (`/inbox`) listing notifications with read/unread states, mark-as-read action, and empty state.
+- **Notes** — personal notes per user, stored in `localStorage` (key `kanban-notes:v1:<userId>`), with CRUD, pin, and search.
+- **Reports** — dashboard page (`/reports`) computing statistics from `listBoards`/`listCards`/`listNotifications` (board count, cards done/open, overdue, due soon, high priority, notifications).
 - **Search** — debounced card search over title and description on the open board.
 - **My Tasks** — every card you created, grouped by board.
-- **Notes** — placeholder page (`/notes`) for a personal notes feature (not yet implemented).
-- **Reports** — placeholder page (`/reports`) for a reports/analytics feature (not yet implemented).
 - **User Profile** — update display name and IANA timezone.
 - **Board Analytics** — backend endpoint only (no UI).
 
@@ -130,15 +130,20 @@ section 6. The Kanban UI part is not committed or deployed yet.
 | Feature                                                                                                                                          | UI  | Backend |
 | ------------------------------------------------------------------------------------------------------------------------------------------------ | --- | ------- |
 | Register, login, logout (logout clears the in-memory token; there is no server logout)                                                           | ✅  | ✅      |
-| Auth pages (login, register): two-column layout with brand panel and form card                                                                   | ✅  | n/a     |
+| Auth pages (login, register): full-viewport gradient background with a centered form card (max-width ~400px)                                     | ✅  | n/a     |
 | Header with Dashboard, My Tasks, Inbox, Notes, Reports, Profile, your name, notification bell, Log out, and a mobile menu                          | ✅  | n/a     |
 | Protected pages redirect to `/login?next=<page>` and return there after login                                                                    | ✅  | n/a     |
 | Create board, list boards (`/`)                                                                                                                  | ✅  | ✅      |
 | Board page from one request (`GET /api/boards/{id}` returns columns and cards)                                                                   | ✅  | ✅      |
 | Add, rename and delete columns (a column that still has cards cannot be deleted: 409)                                                            | ✅  | ✅      |
 | Add, edit and delete cards (delete is a soft delete with `deleted_at`)                                                                           | ✅  | ✅      |
+| Card priority (`low|medium|high`): set in the card dialog, stored on the card model                                                               | ✅  | ✅      |
 | Drag a card to another column or position (`PATCH /api/v1/cards/{id}/position`, Float `order`)                                                   | ✅  | ✅      |
 | "Move to column" select in the card dialog (works without drag, also on touch screens)                                                           | ✅  | ✅      |
+| Kanban / List view toggle on the board page                                                               | ✅  | n/a     |
+| Board background picker: pick a color or gradient for the board                                          | ✅  | n/a     |
+| Board members: invite registered accounts by email, list members, remove members                          | ✅  | ✅      |
+| Card assignees: assign a card to one or more board members (`PATCH /api/v1/cards/{id}/assignees`)                                                 | ✅  | ✅      |
 | Comments in the card dialog: add, edit and delete your own, author name shown                                                                    | ✅  | ✅      |
 | Search cards on the board (`GET /api/v1/cards?search=&board_id=`), open a result in the dialog                                                   | ✅  | ✅      |
 | Due date on a card (set and remove in the dialog; Overdue / Due soon badge on board and My Tasks)                                                | ✅  | ✅      |
@@ -146,8 +151,8 @@ section 6. The Kanban UI part is not committed or deployed yet.
 | Board filter bar: keyword, labels (any of), due date; state in `?q=&labels=&due=`; press `f` to focus (client-side, drag is off while filtering) | ✅  | n/a     |
 | Notification bell with unread count; clicking a notification marks it read                                                                       | ✅  | ✅      |
 | Inbox (`/inbox`): notifications list with read/unread states, mark-as-read action, empty state                                                   | ✅  | ✅      |
-| Notes (`/notes`): placeholder page for personal notes (not yet implemented)                                                                       | ✅  | n/a     |
-| Reports (`/reports`): placeholder page for analytics/reports (not yet implemented)                                                               | ✅  | n/a     |
+| Notes (`/notes`): personal notes per user, stored in `localStorage` (key `kanban-notes:v1:<userId>`), with CRUD, pin, and search                 | ✅  | n/a     |
+| Reports (`/reports`): dashboard page computing statistics from `listBoards`/`listCards`/`listNotifications` (board count, cards done/open, overdue, due soon, high priority, notifications) | ✅  | n/a     |
 | My Tasks (`/my-tasks`): your cards grouped by board, with "Load more"                                                                            | ✅  | ✅      |
 | Profile (`/profile`): edit name and timezone, email read-only                                                                                    | ✅  | ✅      |
 | Shared components `BaseButton`, `BaseBadge`, `BaseModal` (focus trap, Escape, focus return)                                                      | ✅  | n/a     |
@@ -163,9 +168,8 @@ section 6. The Kanban UI part is not committed or deployed yet.
   endpoint (V-009). After a reload you go to `/login?next=...` and come back to the same page.
   Only the path is kept, so active board filters (`?q=`, `?labels=`, `?due=`) are lost on reload.
   A link that already contains the query, opened through `/login?next=...`, is applied.
-- **The board owner is notified on every comment, including their own.** Boards have one
-  owner, so there is nobody else to notify. The bell refreshes every 30 seconds, so a new
-  count can take up to 30 seconds to appear.
+- **The board owner and all members are notified on every comment, including their own.** The
+  bell refreshes every 30 seconds, so a new count can take up to 30 seconds to appear.
 - **No drag on touch screens.** HTML5 drag and drop does not fire on touch. Use
   "Move to column" in the card dialog instead.
 - Comment edit and delete check the author but not board ownership (see

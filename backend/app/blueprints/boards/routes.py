@@ -76,8 +76,11 @@ def list_boards(current_user):
                   items:
                     type: object
     """
-    boards = service.list_boards(current_user)
-    return jsonify({"data": [board_to_dict(b) for b in boards]}), 200
+    boards, roles = service.list_boards(current_user)
+    return (
+        jsonify({"data": [board_to_dict(b, role=roles.get(b.id)) for b in boards]}),
+        200,
+    )
 
 
 @boards_bp.route("/<board_id>", methods=["GET"])
@@ -109,10 +112,26 @@ def get_board(current_user, board_id):
       404:
         description: Board not found.
     """
-    board, columns, cards_by_column = service.get_board_detail(
-        current_user, uuid.UUID(board_id)
+    board, columns, cards_by_column, labels, members, can_move_by_card, assignees_by_card = (
+        service.get_board_detail(current_user, uuid.UUID(board_id))
     )
-    return jsonify({"data": board_detail_to_dict(board, columns, cards_by_column)}), 200
+    return (
+        jsonify(
+            {
+                "data": board_detail_to_dict(
+                    board,
+                    columns,
+                    cards_by_column,
+                    labels,
+                    members=members,
+                    can_move_by_card=can_move_by_card,
+                    assignees_by_card=assignees_by_card,
+                    caller_id=str(current_user.id),
+                )
+            }
+        ),
+        200,
+    )
 
 
 @boards_bp.route("/<board_id>", methods=["PATCH"])

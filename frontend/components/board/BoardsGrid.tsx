@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { LayoutDashboard } from "lucide-react";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { listBoards } from "@/lib/services/boardsService";
 import { ApiError } from "@/lib/errors";
@@ -100,38 +101,65 @@ export function BoardsGrid() {
     setState({ status: "success", boards: [board, ...boards], focusId: board.id });
 
   return (
-    <section aria-label="Boards">
-      <CreateBoardForm onCreated={handleCreated} />
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-3">
+        <CreateBoardForm onCreated={handleCreated} />
+        {boards.length > 0 && (
+          <div className="flex items-baseline justify-between">
+            <p className="text-sm font-medium text-muted-foreground">
+              {boards.length} {boards.length === 1 ? "board" : "boards"}
+            </p>
+          </div>
+        )}
+      </div>
 
       {boards.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          You don&apos;t have any boards yet. Create one to get started.
-        </p>
+        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border/50 bg-muted/20 px-6 py-16 text-center">
+          <LayoutDashboard className="mb-4 h-12 w-12 text-muted-foreground/40" />
+          <h3 className="mb-2 text-base font-semibold text-foreground">No boards yet</h3>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            Create your first board above to start organizing your tasks and projects.
+          </p>
+        </div>
       ) : (
         <ul
-          className="grid list-none grid-cols-1 gap-4 p-0 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+          className="grid list-none grid-cols-1 gap-5 p-0 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
           aria-label={`${boards.length} board${boards.length === 1 ? "" : "s"}`}
         >
           {boards.map((board) => (
-            <li key={board.id}>
+            <li key={board.id} className="group">
               <BoardCard
                 title={board.name}
                 href={`/boards/${board.id}`}
                 openId={`board-link-${board.id}`}
                 meta={
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(board.updated_at).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {board.role && (
+                      <span
+                        data-board-role={board.role}
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                          board.role === "owner"
+                            ? "bg-[var(--brand-light)] text-[var(--brand-dark)]"
+                            : "bg-[var(--bg-hover)] text-[var(--text-muted)]"
+                        }`}
+                      >
+                        {board.role}
+                      </span>
+                    )}
+                    <span className="text-xs text-muted-foreground">
+                      Updated {new Date(board.updated_at).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </span>
+                  </div>
                 }
               />
             </li>
           ))}
         </ul>
       )}
-    </section>
+    </div>
   );
 }

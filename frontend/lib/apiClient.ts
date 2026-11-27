@@ -265,6 +265,11 @@ export function patch<T>(path: string, body: unknown, opts: Omit<ApiClientOption
   return apiClient<T>(path, { ...opts, method: "PATCH", body });
 }
 
+/** PUT /path with a JSON body and return typed data. */
+export function put<T>(path: string, body: unknown, opts: Omit<ApiClientOptions, "method" | "body"> = {}): Promise<T> {
+  return apiClient<T>(path, { ...opts, method: "PUT", body });
+}
+
 /** DELETE /path and return typed data (or undefined for 204). */
 export function del<T = void>(path: string, opts: Omit<ApiClientOptions, "method" | "body"> = {}): Promise<T> {
   return apiClient<T>(path, { ...opts, method: "DELETE" });

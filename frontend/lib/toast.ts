@@ -25,6 +25,11 @@ export function showLoading(message: string): string {
   return toast.loading(message);
 }
 
+/** Dismiss a toast created by `showLoading` (or any other id-returning call). */
+export function dismissToast(id: string): void {
+  toast.dismiss(id);
+}
+
 // Re-export the underlying react-hot-toast helpers so callers can use either
 // the `show*` wrapper form or the native `toast.success/error/loading` form.
 export const success = toast.success;

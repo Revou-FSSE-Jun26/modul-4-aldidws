@@ -38,7 +38,7 @@ describe("ProfilePage", () => {
 
   it("shows the email read-only and the user id, and no role", () => {
     render(<ProfilePage />);
-    const email = screen.getByLabelText("Email");
+    const email = screen.getByLabelText("Email Address");
     expect(email).toHaveValue("ann@example.com");
     expect(email).toHaveAttribute("readonly");
     expect(screen.queryByText("Role")).not.toBeInTheDocument();
@@ -53,7 +53,7 @@ describe("ProfilePage", () => {
       }),
     });
     render(<ProfilePage />);
-    const name = screen.getByLabelText("Name");
+    const name = screen.getByLabelText("Display Name");
     await userEvent.clear(name);
     await userEvent.type(name, "  Ann B ");
     await userEvent.selectOptions(screen.getByLabelText("Timezone"), "Europe/Paris");
@@ -74,29 +74,29 @@ describe("ProfilePage", () => {
       }),
     });
     render(<ProfilePage />);
-    const name = screen.getByLabelText("Name");
+    const name = screen.getByLabelText("Display Name");
     await userEvent.clear(name);
     await userEvent.type(name, "Keep me");
     await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/not a valid IANA timezone/);
-    expect(screen.getByLabelText("Name")).toHaveValue("Keep me");
+    expect(screen.getByLabelText("Display Name")).toHaveValue("Keep me");
     expect(mockUpdateProfile).not.toHaveBeenCalled();
   });
 
   it("shows a general error when the request fails", async () => {
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
     render(<ProfilePage />);
-    await userEvent.type(screen.getByLabelText("Name"), "x");
+    await userEvent.type(screen.getByLabelText("Display Name"), "x");
     await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(await screen.findByRole("alert")).toBeInTheDocument();
-    expect(screen.queryByRole("status")).toHaveTextContent("");
+    expect(screen.queryByText("Profile saved successfully.")).not.toBeInTheDocument();
   });
 
   it("rejects a name longer than 255 characters without a request", async () => {
     const calls = routeFetch(fetchMock, {});
     render(<ProfilePage />);
-    const name = screen.getByLabelText("Name");
+    const name = screen.getByLabelText("Display Name");
     await userEvent.clear(name);
     await userEvent.click(name);
     await userEvent.paste("x".repeat(256));
@@ -140,7 +140,7 @@ describe("ProfilePage", () => {
       expect(reset).toBeDisabled();
       expect(save).toHaveAccessibleDescription("No changes to save");
 
-      await userEvent.type(screen.getByLabelText("Name"), "x");
+      await userEvent.type(screen.getByLabelText("Display Name"), "x");
       expect(save).toBeEnabled();
       expect(reset).toBeEnabled();
       expect(screen.queryByText("No changes to save")).not.toBeInTheDocument();
@@ -148,16 +148,16 @@ describe("ProfilePage", () => {
 
     it("treats a whitespace-only edit as clean", async () => {
       render(<ProfilePage />);
-      await userEvent.type(screen.getByLabelText("Name"), "   ");
+      await userEvent.type(screen.getByLabelText("Display Name"), "   ");
       expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
     });
 
     it("reset restores saved values and the form is clean again", async () => {
       render(<ProfilePage />);
-      await userEvent.type(screen.getByLabelText("Name"), " Smith");
+      await userEvent.type(screen.getByLabelText("Display Name"), " Smith");
       await userEvent.selectOptions(screen.getByLabelText("Timezone"), "Europe/Paris");
       await userEvent.click(screen.getByRole("button", { name: "Reset" }));
-      expect(screen.getByLabelText("Name")).toHaveValue("Ann");
+      expect(screen.getByLabelText("Display Name")).toHaveValue("Ann");
       expect(screen.getByLabelText("Timezone")).toHaveValue("UTC");
       expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
       expect(screen.getByRole("button", { name: "Reset" })).toBeDisabled();
@@ -165,7 +165,7 @@ describe("ProfilePage", () => {
 
     it("clears field errors on reset", async () => {
       render(<ProfilePage />);
-      const name = screen.getByLabelText("Name");
+      const name = screen.getByLabelText("Display Name");
       await userEvent.click(name);
       await userEvent.paste("x".repeat(256));
       await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -179,7 +179,7 @@ describe("ProfilePage", () => {
       render(<ProfilePage />);
       expect(count(addSpy)).toBe(0);
 
-      await userEvent.type(screen.getByLabelText("Name"), "x");
+      await userEvent.type(screen.getByLabelText("Display Name"), "x");
       expect(count(addSpy)).toBe(1);
       expect(count(removeSpy)).toBe(0);
 
@@ -192,11 +192,11 @@ describe("ProfilePage", () => {
         "PATCH /api/users/me": jsonResponse(200, { data: { ...user, name: "Annie" } }),
       });
       render(<ProfilePage />);
-      await userEvent.type(screen.getByLabelText("Name"), "nie");
+      await userEvent.type(screen.getByLabelText("Display Name"), "nie");
       await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
       expect(await screen.findByText("Profile saved successfully.")).toBeInTheDocument();
-      expect(screen.getByLabelText("Name")).toHaveValue("Annie");
+      expect(screen.getByLabelText("Display Name")).toHaveValue("Annie");
       expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
       expect(count(addSpy)).toBe(1);
       expect(count(removeSpy)).toBe(1);
@@ -205,10 +205,10 @@ describe("ProfilePage", () => {
     it("keeps typed values and stays dirty after a failed save", async () => {
       fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
       render(<ProfilePage />);
-      await userEvent.type(screen.getByLabelText("Name"), "x");
+      await userEvent.type(screen.getByLabelText("Display Name"), "x");
       await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
       expect(await screen.findByRole("alert")).toBeInTheDocument();
-      expect(screen.getByLabelText("Name")).toHaveValue("Annx");
+      expect(screen.getByLabelText("Display Name")).toHaveValue("Annx");
       expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
       expect(screen.getByRole("button", { name: "Reset" })).toBeEnabled();
       expect(count(removeSpy)).toBe(0);
@@ -216,18 +216,18 @@ describe("ProfilePage", () => {
 
     it("updates the character counter, which describes the name input", async () => {
       render(<ProfilePage />);
-      const name = screen.getByLabelText("Name");
-      expect(name).toHaveAccessibleDescription("3 / 255");
+      const name = screen.getByLabelText("Display Name");
+      expect(name).toHaveAccessibleDescription("3 / 255 characters");
       await userEvent.type(name, "ab");
-      expect(name).toHaveAccessibleDescription("5 / 255");
+      expect(name).toHaveAccessibleDescription("5 / 255 characters");
     });
 
     it("announces remaining characters only near the limit", async () => {
       render(<ProfilePage />);
       expect(screen.queryByText(/characters remaining/)).not.toBeInTheDocument();
-      await userEvent.type(screen.getByLabelText("Name"), "x");
+      await userEvent.type(screen.getByLabelText("Display Name"), "x");
       expect(screen.queryByText(/characters remaining/)).not.toBeInTheDocument();
-      await userEvent.click(screen.getByLabelText("Name"));
+      await userEvent.click(screen.getByLabelText("Display Name"));
       await userEvent.paste("y".repeat(235));
       expect(screen.getByText(/characters remaining/)).toBeInTheDocument();
     });

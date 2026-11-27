@@ -98,6 +98,14 @@ class ColumnNotFoundException(AppException):
     message = "Column not found"
 
 
+class LabelNotFoundException(AppException):
+    """Raised when a requested label does not exist or is not accessible."""
+
+    status_code = 404
+    error_code = "LABEL_NOT_FOUND"
+    message = "Label not found"
+
+
 class UserNotFoundException(AppException):
     """Raised when a referenced user account does not exist."""
 

@@ -73,11 +73,14 @@ def tables(engine):
     from app.models import (  # noqa: F401 — side-effect imports
         User,
         Board,
+        BoardMember,
         BoardColumn,
         Card,
+        CardAssignee,
         CardComment,
         RefreshToken,
         Notification,
+        Label,
     )
     from app.extensions import db
 
@@ -173,16 +176,24 @@ def make_user(db_session):
 
 @pytest.fixture()
 def make_board(db_session):
-    """Return a factory that inserts a Board row and returns the instance."""
+    """Return a factory that inserts a Board and its owner membership row.
+
+    The owner's ``board_members`` row is created here so that every access
+    check (read or write) goes through the membership table, mirroring what
+    ``boards.service.create_board`` does in production.
+    """
 
     def _factory(owner, name: str | None = None):
         from app.models.board import Board
+        from app.models.board_member import BoardMember
 
         board = Board(
             owner_id=owner.id,
             name=name or f"Board {uuid.uuid4().hex[:6]}",
         )
         db_session.add(board)
+        db_session.flush()
+        db_session.add(BoardMember(board_id=board.id, user_id=owner.id, role="owner"))
         db_session.flush()
         return board
 
@@ -224,6 +235,73 @@ def make_card(db_session):
         db_session.add(card)
         db_session.flush()
         return card
+
+    return _factory
+
+
+@pytest.fixture()
+def make_label(db_session):
+    """Return a factory that inserts a Label row and returns the instance."""
+    def _factory(board, name: str | None = None, color: str = "blue"):
+        from app.models.label import Label
+
+        label = Label(
+            board_id=board.id,
+            name=name or f"Label {uuid.uuid4().hex[:6]}",
+            color=color,
+        )
+        db_session.add(label)
+        db_session.flush()
+        return label
+
+    return _factory
+
+
+@pytest.fixture()
+def attach_label(db_session):
+    """Return a helper that attaches labels to a card through the association."""
+    def _attach(card, *labels):
+        card.labels.extend(labels)
+        db_session.flush()
+
+    return _attach
+
+
+@pytest.fixture()
+def make_board_member(db_session):
+    """Return a factory that inserts a BoardMember row and returns the instance.
+
+    The owner's row is created as a side effect of ``make_board`` in the
+    access layer, but test data is built by hand, so tests that need an
+    explicit owner membership call this with ``role="owner"``.
+    """
+
+    def _factory(board, user, role: str = "member"):
+        from app.models.board_member import BoardMember
+
+        member = BoardMember(
+            board_id=board.id,
+            user_id=user.id,
+            role=role,
+        )
+        db_session.add(member)
+        db_session.flush()
+        return member
+
+    return _factory
+
+
+@pytest.fixture()
+def tag_card(db_session):
+    """Return a factory that tags a user on a card (card_assignees row)."""
+
+    def _factory(card, user):
+        from app.models.card_assignee import CardAssignee
+
+        tag = CardAssignee(card_id=card.id, user_id=user.id)
+        db_session.add(tag)
+        db_session.flush()
+        return tag
 
     return _factory
 
@@ -289,6 +367,43 @@ def client(flask_app, db_session):
         with patch.object(db, "session", db_session):
             with flask_app.test_client() as test_client:
                 yield test_client
+
+
+def count_selects(db_session, call):
+    """Run *call*; return ``(result, reads)`` where *reads* are the SELECT
+    statements it issued against the tracked tables.
+
+    The default set of tracked tables is the one used by the N+1 guard on
+    the board detail endpoint: boards, board_columns, cards, card_labels,
+    labels, board_members and card_assignees.
+    """
+    from sqlalchemy import event
+
+    statements = []
+
+    def _record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    bind = db_session.get_bind()
+    event.listen(bind, "before_cursor_execute", _record)
+    try:
+        result = call()
+    finally:
+        event.remove(bind, "before_cursor_execute", _record)
+    tables = (
+        "FROM boards",
+        "FROM board_columns",
+        "FROM cards",
+        "FROM card_labels",
+        "FROM labels",
+        "FROM board_members",
+        "FROM card_assignees",
+    )
+    reads = [
+        s for s in statements
+        if s.lstrip().upper().startswith("SELECT") and any(t in s for t in tables)
+    ]
+    return result, reads
 
 
 def make_jwt(user_id, secret: str = "test-secret-key-for-tests-only") -> str:

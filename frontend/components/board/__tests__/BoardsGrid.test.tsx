@@ -74,7 +74,7 @@ describe("BoardsGrid", () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { data: [] }));
     render(<BoardsGrid />);
     expect(
-      await screen.findByText(/don't have any boards yet/i),
+      await screen.findByText(/No boards yet/i),
     ).toBeInTheDocument();
   });
 

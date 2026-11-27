@@ -5,6 +5,18 @@ from marshmallow import Schema, ValidationError, fields, validate
 from app.models.board_column import BoardColumn
 
 
+COLUMN_COLORS = ("gray", "blue", "orange", "green", "red")
+
+
+class StrictBoolean(fields.Boolean):
+    """Accepts only JSON true/false (no "true", 1 or 0)."""
+
+    def _deserialize(self, value, attr, data, **kwargs):
+        if not isinstance(value, bool):
+            raise self.make_error("invalid", input=value)
+        return value
+
+
 class CreateColumnSchema(Schema):
     name = fields.String(
         required=True,
@@ -14,6 +26,12 @@ class CreateColumnSchema(Schema):
         load_default=None,
         validate=validate.Range(min=0),
     )
+    color = fields.String(
+        required=False,
+        allow_none=True,
+        validate=validate.OneOf(COLUMN_COLORS),
+    )
+    is_done = StrictBoolean(required=False)
 
     def load(self, data, **kwargs):
         result = super().load(data, **kwargs)
@@ -32,6 +50,12 @@ class UpdateColumnSchema(Schema):
         required=False,
         validate=validate.Range(min=0),
     )
+    color = fields.String(
+        required=False,
+        allow_none=True,
+        validate=validate.OneOf(COLUMN_COLORS),
+    )
+    is_done = StrictBoolean(required=False)
 
     def load(self, data, **kwargs):
         result = super().load(data, **kwargs)
@@ -66,6 +90,8 @@ def column_to_dict(col: BoardColumn) -> dict:
         "board_id": str(col.board_id),
         "name": col.name,
         "position": col.position,
+        "color": col.color,
+        "is_done": col.is_done,
         "created_at": col.created_at.isoformat(),
         "updated_at": col.updated_at.isoformat(),
     }

@@ -11,12 +11,16 @@ Contains the business logic for board operations.  Every function here MUST:
 import uuid
 
 from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 
+from app.access import get_board_for_user
 from app.common.exceptions import BoardNotFoundException, ResourceConflictException
 from app.extensions import db
 from app.models.board import Board
 from app.models.board_column import BoardColumn
+from app.models.board_member import BoardMember
 from app.models.card import Card
+from app.models.label import Label
 from app.models.user import User
 
 
@@ -43,22 +47,20 @@ def _check_name_conflict(user: User, name: str, exclude_board_id=None) -> None:
 
 
 def _get_owned_board(user: User, board_id: uuid.UUID) -> Board:
-    """Return the board owned by *user* with *board_id*, or raise 404."""
-    board = db.session.execute(
-        db.select(Board).where(
-            Board.id == board_id,
-            Board.owner_id == user.id,
-        )
-    ).scalar_one_or_none()
+    """Return the board *user* may access, or raise a non-disclosing 404.
 
-    if board is None:
-        raise BoardNotFoundException()
-
-    return board
+    Kept for backward compatibility with service modules that still import
+    this name; delegates to the shared access layer.
+    """
+    return get_board_for_user(user, board_id)
 
 
 def create_board(current_user: User, name: str) -> Board:
     """Create and persist a new board owned by *current_user*.
+
+    The owner's ``board_members`` row (role ``'owner'``) is created in the
+    same transaction so every access check can go through the membership
+    table uniformly.
 
     Args:
         current_user: The authenticated user who will own the board.
@@ -77,9 +79,12 @@ def create_board(current_user: User, name: str) -> Board:
         owner_id=current_user.id,
         name=name,
     )
+    membership = BoardMember(board_id=None, user_id=current_user.id, role="owner")
 
     try:
         db.session.add(board)
+        membership.board_id = board.id
+        db.session.add(membership)
         db.session.commit()
     except Exception:
         db.session.rollback()
@@ -88,22 +93,45 @@ def create_board(current_user: User, name: str) -> Board:
     return board
 
 
-def list_boards(current_user: User) -> list[Board]:
-    """Return all boards owned by *current_user*.
+def list_boards(current_user: User) -> tuple[list[Board], dict[uuid.UUID, str]]:
+    """Return all boards *current_user* may access, plus each board's role.
 
     Args:
         current_user: The authenticated user whose boards are listed.
 
     Returns:
-        A list of ``Board`` instances, ordered by creation time ascending.
+        Tuple ``(boards, roles)`` where ``boards`` is a list of ``Board``
+        instances ordered by creation time ascending, and ``roles`` maps
+        board id to the caller's role on that board
+        (``'owner'`` or ``'member'``).
     """
-    boards = db.session.execute(
-        db.select(Board)
-        .where(Board.owner_id == current_user.id)
-        .order_by(Board.created_at.asc())
-    ).scalars().all()
-
-    return list(boards)
+    # One query gets every board the user owns or is a member of, and the
+    # second query tells us which role the user holds on each board.
+    accessible = {
+        b.id for b in db.session.execute(
+            db.select(Board).where(
+                (Board.owner_id == current_user.id)
+                | (
+                    Board.id.in_(
+                        db.select(BoardMember.board_id).where(
+                            BoardMember.user_id == current_user.id
+                        )
+                    )
+                )
+            )
+        ).scalars().all()
+    }
+    boards = list(
+        db.session.execute(
+            db.select(Board)
+            .where(Board.id.in_(accessible))
+            .order_by(Board.created_at.asc())
+        ).scalars().all()
+    )
+    roles: dict[uuid.UUID, str] = {
+        b.id: ("owner" if b.owner_id == current_user.id else "member") for b in boards
+    }
+    return boards, roles
 
 
 def get_board(current_user: User, board_id: uuid.UUID) -> Board:
@@ -124,15 +152,20 @@ def get_board(current_user: User, board_id: uuid.UUID) -> Board:
 
 
 def get_board_detail(current_user: User, board_id: uuid.UUID):
-    """Return a board with its columns and live cards (three queries).
+    """Return a board with columns, live cards, labels, members and can_move.
 
     Returns:
-        Tuple ``(board, columns, cards_by_column)`` where ``cards_by_column``
-        maps column id to its non-deleted cards ordered by ``order``.
+        Tuple ``(board, columns, cards_by_column, labels, members,
+        can_move_by_card, assignees_by_card)`` where ``cards_by_column``
+        maps column id to its non-deleted cards ordered by ``order``,
+        ``labels`` are the board's labels, ``members`` is the list of
+        (BoardMember, User) pairs, ``can_move_by_card`` maps card id to a
+        bool (can the caller drag it?) and ``assignees_by_card`` maps card
+        id to the list of tagged member ids.
 
     Raises:
-        BoardNotFoundException: When the board does not exist or is not owned
-            by *current_user*.
+        BoardNotFoundException: When the board does not exist or
+            *current_user* is not a member (non-disclosing 404).
     """
     board = _get_owned_board(current_user, board_id)
 
@@ -145,9 +178,11 @@ def get_board_detail(current_user: User, board_id: uuid.UUID):
     )
 
     cards_by_column: dict = {col.id: [] for col in columns}
+    all_cards: list[Card] = []
     if columns:
         cards = db.session.execute(
             db.select(Card)
+            .options(selectinload(Card.labels))
             .where(
                 Card.column_id.in_(list(cards_by_column)),
                 Card.deleted_at.is_(None),
@@ -156,8 +191,50 @@ def get_board_detail(current_user: User, board_id: uuid.UUID):
         ).scalars().all()
         for card in cards:
             cards_by_column[card.column_id].append(card)
+        all_cards = list(cards)
 
-    return board, columns, cards_by_column
+    labels = list(
+        db.session.execute(db.select(Label).where(Label.board_id == board.id)).scalars().all()
+    )
+
+    members = list(
+        db.session.execute(
+            db.select(BoardMember, User)
+            .join(User, User.id == BoardMember.user_id)
+            .where(BoardMember.board_id == board.id)
+            .order_by(BoardMember.role.desc(), User.name.asc().nulls_last())
+        ).all()
+    )
+
+    # Move rule: board owner may move anything; otherwise a card can be moved
+    # only by its creator or a user tagged on it.
+    from app.models.card_assignee import CardAssignee
+
+    card_ids: list[uuid.UUID] = [c.id for c in all_cards]
+    tagged_card_ids: set[uuid.UUID] = set()
+    assignees_by_card: dict[uuid.UUID, list[uuid.UUID]] = {cid: [] for cid in card_ids}
+
+    if card_ids:
+        rows = db.session.execute(
+            db.select(CardAssignee.card_id, CardAssignee.user_id).where(
+                CardAssignee.card_id.in_(card_ids)
+            )
+        ).all()
+        for card_id, user_id in rows:
+            assignees_by_card[card_id].append(user_id)
+            if user_id == current_user.id:
+                tagged_card_ids.add(card_id)
+
+    def _can_move(card: Card) -> bool:
+        if board.owner_id == current_user.id:
+            return True
+        if card.owner_id == current_user.id:
+            return True
+        return card.id in tagged_card_ids
+
+    can_move_by_card = {card.id: _can_move(card) for card in all_cards}
+
+    return board, columns, cards_by_column, labels, members, can_move_by_card, assignees_by_card
 
 
 def update_board(current_user: User, board_id: uuid.UUID, data: dict) -> Board:
@@ -178,13 +255,16 @@ def update_board(current_user: User, board_id: uuid.UUID, data: dict) -> Board:
         ResourceConflictException: When the new name conflicts with
             another board owned by *current_user* (case-insensitive).
     """
-    board = _get_owned_board(current_user, board_id)
+    board = get_board_for_user(current_user, board_id, write=True)
 
     if "name" in data:
         new_name = data["name"]
         if new_name.lower() != board.name.lower():
             _check_name_conflict(current_user, new_name, exclude_board_id=board.id)
         board.name = new_name
+
+    if "is_favorite" in data:
+        board.is_favorite = data["is_favorite"]
 
     try:
         db.session.commit()
@@ -209,10 +289,10 @@ def delete_board(current_user: User, board_id: uuid.UUID) -> None:
         board_id: The UUID primary key of the board to delete.
 
     Raises:
-        BoardNotFoundException: When the board does not exist or is not
-            owned by *current_user*.
+        BoardNotFoundException: When the board does not exist or *current_user*
+            is not the owner (non-disclosing 404).
     """
-    board = _get_owned_board(current_user, board_id)
+    board = get_board_for_user(current_user, board_id, write=True)
 
     try:
         db.session.delete(board)

@@ -4,6 +4,8 @@ import uuid
 
 from app.common.exceptions import NotificationNotFoundException
 from app.extensions import db
+from app.models.board_column import BoardColumn
+from app.models.board_member import BoardMember
 from app.models.notification import Notification
 
 
@@ -46,23 +48,30 @@ def count_unread(current_user) -> int:
     ).scalar() or 0
 
 
-def _notification_recipients(board_owner_id: uuid.UUID, author_id: uuid.UUID) -> list[uuid.UUID]:
-    """Return the user ids to notify about a new comment.
+def _notification_recipients(board_id: uuid.UUID, exclude_id: uuid.UUID) -> list[uuid.UUID]:
+    """Return the user ids to notify on a board event.
 
-    Boards have a single owner today, so the owner is notified on every
-    comment, including their own. Narrow this to exclude *author_id* once
-    boards can be shared.
+    Every board member is a recipient except *exclude_id* (the actor), so
+    the author of a comment or the mover of a card never receives a
+    notification about their own action.  Boards with a single owner simply
+    yield an empty list — there is nobody else to notify.
     """
-    return [board_owner_id]
+    ids = db.session.execute(
+        db.select(BoardMember.user_id).where(
+            BoardMember.board_id == board_id,
+            BoardMember.user_id != exclude_id,
+        )
+    ).scalars().all()
+    return list(ids)
 
 
-def notify_comment_added(board_owner_id: uuid.UUID, card, comment, author) -> None:
+def notify_comment_added(board_id: uuid.UUID, card, comment, author) -> None:
     """Stage a notification for each recipient of a new comment.
 
     Does NOT commit; the caller owns the transaction so the comment and its
-    notification are saved together.
+    notifications are saved together.
     """
-    for user_id in _notification_recipients(board_owner_id, author.id):
+    for user_id in _notification_recipients(board_id, author.id):
         db.session.add(
             Notification(
                 user_id=user_id,
@@ -70,6 +79,44 @@ def notify_comment_added(board_owner_id: uuid.UUID, card, comment, author) -> No
                 body=comment.body[:500],
             )
         )
+
+
+def notify_card_moved(board_id: uuid.UUID, card, mover) -> None:
+    """Stage a notification for each recipient of a card move.
+
+    The mover is excluded; other board members are told which card moved
+    and where it landed.  Does NOT commit; the caller owns the transaction.
+    """
+    column_name = db.session.execute(
+        db.select(BoardColumn.name).where(BoardColumn.id == card.column_id)
+    ).scalar_one_or_none()
+
+    mover_name = (mover.name or "Someone").strip() or "Someone"
+    body = f"Card moved to '{column_name}'." if column_name else "Card moved to a new column."
+
+    for user_id in _notification_recipients(board_id, mover.id):
+        db.session.add(
+            Notification(
+                user_id=user_id,
+                title=f"{mover_name} moved {card.title[:120]}",
+                body=body[:500],
+            )
+        )
+
+
+def notify_member_invited(member_user_id: uuid.UUID, board_name: str, inviter_name: str | None) -> None:
+    """Stage a notification telling the invitee they joined a board.
+
+    Does NOT commit; the caller owns the transaction so the membership row
+    and the notification are saved together.
+    """
+    db.session.add(
+        Notification(
+            user_id=member_user_id,
+            title=f"You joined {board_name[:150]}",
+            body=(f"{inviter_name} added you to this board.") if inviter_name else "You were added to this board.",
+        )
+    )
 
 
 def mark_read(current_user, notification_id: uuid.UUID) -> Notification:

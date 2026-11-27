@@ -49,6 +49,8 @@ class Card(db.Model):
         Optional free-form body text.
     order:
         Float ordering value within the column.  Must be >= 0.
+    due_date:
+        Optional due date and time (UTC, timezone-aware).
     deleted_at:
         Optional soft-delete timestamp (UTC, timezone-aware).
     created_at / updated_at:
@@ -59,6 +61,11 @@ class Card(db.Model):
 
     __table_args__ = (
         CheckConstraint('"order" >= 0', name="ck_cards_order_nonneg"),
+        # priority, when present, must be one of the three allowed values.
+        CheckConstraint(
+            "priority IS NULL OR priority IN ('low','medium','high')",
+            name="ck_cards_priority",
+        ),
         # Composite index: the most common query fetches all cards for a
         # column ordered by order.
         Index("ix_cards_column_id_order", "column_id", "order"),
@@ -112,6 +119,18 @@ class Card(db.Model):
         default=0.0,
     )
 
+    due_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    # Priority level: null means no priority, 'low', 'medium', or 'high'.
+    # Enforced by ck_cards_priority check constraint above.
+    priority: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
+    )
+
     # ------------------------------------------------------------------
     # Timestamps
     # ------------------------------------------------------------------
@@ -149,6 +168,20 @@ class Card(db.Model):
         lazy="select",
         passive_deletes=True,
     )
+    labels: Mapped[list["Label"]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        "Label",
+        secondary="card_labels",
+        lazy="select",
+        passive_deletes=True,
+    )
+
+    assignees: Mapped[list["CardAssignee"]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        "CardAssignee",
+        lazy="select",
+        # Database CASCADE (card_assignees.card_id) removes tag rows when
+        # the card is deleted.
+        passive_deletes=True,
+    )
 
     # ------------------------------------------------------------------
     # Helpers
@@ -167,6 +200,7 @@ class Card(db.Model):
             "title": self.title,
             "description": self.description,
             "order": self.order,
+            "priority": self.priority,
             "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),

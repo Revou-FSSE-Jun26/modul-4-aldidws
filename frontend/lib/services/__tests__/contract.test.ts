@@ -11,6 +11,9 @@ import * as boards from "@/lib/services/boardsService";
 import * as columns from "@/lib/services/columnsService";
 import * as cards from "@/lib/services/cardsService";
 import * as comments from "@/lib/services/commentsService";
+import * as labels from "@/lib/services/labelsService";
+import * as members from "@/lib/services/membersService";
+import type { LabelColor } from "@/lib/types/api";
 import * as users from "@/lib/services/usersService";
 
 interface Entry {
@@ -39,14 +42,54 @@ const drivers: Record<string, Driver> = {
   createBoard: (e) => boards.createBoard(TOKEN, e.body.name as string),
   createColumn: (e) => columns.createColumn(TOKEN, e.pathParams.board_id, e.body.name as string),
   renameColumn: (e) => columns.renameColumn(TOKEN, e.pathParams.column_id, e.body.name as string),
+  reorderColumns: (e) =>
+    columns.reorderColumns(TOKEN, e.pathParams.board_id, e.body.ordered_ids as string[]),
   createCard: (e) =>
     cards.createCard(TOKEN, e.pathParams.column_id, e.body as { title: string; description?: string }),
   updateCard: (e) => cards.updateCard(TOKEN, e.pathParams.card_id, e.body as { title?: string }),
+  createCardWithDueDate: (e) =>
+    cards.createCard(TOKEN, e.pathParams.column_id, e.body as { title: string; due_date?: string | null }),
+  createCardAtTop: (e) =>
+    cards.createCard(TOKEN, e.pathParams.column_id, e.body as { title: string; position?: "top" | "bottom" }),
+  createCardWithPriority: (e) =>
+    cards.createCard(
+      TOKEN,
+      e.pathParams.column_id,
+      e.body as { title: string; priority?: "low" | "medium" | "high" },
+    ),
+  updateCardPriority: (e) =>
+    cards.updateCard(
+      TOKEN,
+      e.pathParams.card_id,
+      e.body as { priority?: "low" | "medium" | "high" | null },
+    ),
+  createCardWithDueDateAndLabels: (e) =>
+    cards.createCard(
+      TOKEN,
+      e.pathParams.column_id,
+      e.body as { title: string; due_date?: string | null; priority?: "low" | "medium" | "high"; labels?: { id: string; name: string; color: LabelColor }[] },
+    ),
+  setCardDueDate: (e) =>
+    cards.updateCard(TOKEN, e.pathParams.card_id, e.body as { due_date?: string | null }),
+  clearCardDueDate: (e) =>
+    cards.updateCard(TOKEN, e.pathParams.card_id, e.body as { due_date?: string | null }),
+  createLabel: (e) =>
+    labels.createLabel(TOKEN, e.pathParams.board_id, e.body as { name: string; color: LabelColor }),
+  renameLabel: (e) =>
+    labels.updateLabel(TOKEN, e.pathParams.label_id, e.body as { name?: string }),
+  recolourLabel: (e) =>
+    labels.updateLabel(TOKEN, e.pathParams.label_id, e.body as { color?: LabelColor }),
+  setCardLabels: (e) =>
+    cards.setCardLabels(TOKEN, e.pathParams.card_id, e.body.label_ids as string[]),
   moveCard: (e) =>
     cards.moveCard(TOKEN, e.pathParams.card_id, e.body as { column_id: string; order: number }),
   createComment: (e) => comments.createComment(TOKEN, e.pathParams.card_id, e.body.body as string),
   updateComment: (e) => comments.updateComment(TOKEN, e.pathParams.comment_id, e.body.body as string),
   updateProfile: (e) => users.updateProfile(TOKEN, e.body as { name?: string; timezone?: string }),
+  inviteBoardMember: (e) =>
+    members.inviteMember(TOKEN, e.pathParams.board_id, e.body.email as string),
+  setCardAssignees: (e) =>
+    members.setCardAssignees(TOKEN, e.pathParams.card_id, e.body.user_ids as string[]),
 };
 
 describe("frontend request contract", () => {

@@ -50,12 +50,80 @@
       "pathParams": { "card_id": "33333333-3333-4333-8333-333333333333" },
       "body": { "title": "Write more tests", "description": "Updated" }
     },
+    "createCardWithDueDate": {
+      "method": "POST",
+      "path": "/api/v1/columns/{column_id}/cards",
+      "schema": "CreateCardSchema",
+      "pathParams": { "column_id": "22222222-2222-4222-8222-222222222222" },
+      "body": { "title": "Ship it", "due_date": "2026-12-01T17:00:00Z" }
+    },
+    "createCardAtTop": {
+      "method": "POST",
+      "path": "/api/v1/columns/{column_id}/cards",
+      "schema": "CreateCardSchema",
+      "pathParams": { "column_id": "22222222-2222-4222-8222-222222222222" },
+      "body": { "title": "Top task", "position": "top" }
+    },
+    "setCardDueDate": {
+      "method": "PATCH",
+      "path": "/api/v1/cards/{card_id}",
+      "schema": "UpdateCardSchema",
+      "pathParams": { "card_id": "33333333-3333-4333-8333-333333333333" },
+      "body": { "due_date": "2026-12-01T17:00:00Z" }
+    },
+    "clearCardDueDate": {
+      "method": "PATCH",
+      "path": "/api/v1/cards/{card_id}",
+      "schema": "UpdateCardSchema",
+      "pathParams": { "card_id": "33333333-3333-4333-8333-333333333333" },
+      "body": { "due_date": null }
+    },
+    "createLabel": {
+      "method": "POST",
+      "path": "/api/boards/{board_id}/labels",
+      "schema": "CreateLabelSchema",
+      "pathParams": { "board_id": "11111111-1111-4111-8111-111111111111" },
+      "body": { "name": "Bug", "color": "red" }
+    },
+    "renameLabel": {
+      "method": "PATCH",
+      "path": "/api/labels/{label_id}",
+      "schema": "UpdateLabelSchema",
+      "pathParams": { "label_id": "66666666-6666-4666-8666-666666666666" },
+      "body": { "name": "Defect" }
+    },
+    "recolourLabel": {
+      "method": "PATCH",
+      "path": "/api/labels/{label_id}",
+      "schema": "UpdateLabelSchema",
+      "pathParams": { "label_id": "66666666-6666-4666-8666-666666666666" },
+      "body": { "color": "purple" }
+    },
+    "setCardLabels": {
+      "method": "PUT",
+      "path": "/api/v1/cards/{card_id}/labels",
+      "schema": "SetCardLabelsSchema",
+      "pathParams": { "card_id": "33333333-3333-4333-8333-333333333333" },
+      "body": { "label_ids": ["66666666-6666-4666-8666-666666666666"] }
+    },
     "moveCard": {
       "method": "PATCH",
       "path": "/api/v1/cards/{card_id}/position",
       "schema": "CardPositionSchema",
       "pathParams": { "card_id": "33333333-3333-4333-8333-333333333333" },
       "body": { "column_id": "44444444-4444-4444-8444-444444444444", "order": 1.5 }
+    },
+    "reorderColumns": {
+      "method": "PATCH",
+      "path": "/api/boards/{board_id}/columns/reorder",
+      "schema": "ReorderColumnsSchema",
+      "pathParams": { "board_id": "11111111-1111-4111-8111-111111111111" },
+      "body": {
+        "ordered_ids": [
+          "22222222-2222-4222-8222-222222222222",
+          "33333333-3333-4333-8333-333333333333"
+        ]
+      }
     },
     "createComment": {
       "method": "POST",
@@ -77,6 +145,41 @@
       "schema": "UpdateUserSchema",
       "pathParams": {},
       "body": { "name": "Ada", "timezone": "UTC" }
+    },
+    "createCardWithPriority": {
+      "method": "POST",
+      "path": "/api/v1/columns/{column_id}/cards",
+      "schema": "CreateCardSchema",
+      "pathParams": { "column_id": "22222222-2222-4222-8222-222222222222" },
+      "body": { "title": "High priority task", "priority": "high" }
+    },
+    "updateCardPriority": {
+      "method": "PATCH",
+      "path": "/api/v1/cards/{card_id}",
+      "schema": "UpdateCardSchema",
+      "pathParams": { "card_id": "33333333-3333-4333-8333-333333333333" },
+      "body": { "priority": null }
+    },
+    "createCardWithDueDateAndLabels": {
+      "method": "POST",
+      "path": "/api/v1/columns/{column_id}/cards",
+      "schema": "CreateCardSchema",
+      "pathParams": { "column_id": "22222222-2222-4222-8222-222222222222" },
+      "body": { "title": "Task with due date and labels", "due_date": "2026-12-01T17:00:00Z", "priority": "medium", "labels": [{ "id": "66666666-6666-4666-8666-666666666666", "name": "Bug", "color": "red" }] }
+    },
+    "inviteBoardMember": {
+      "method": "POST",
+      "path": "/api/boards/{board_id}/members",
+      "schema": "InviteMemberSchema",
+      "pathParams": { "board_id": "11111111-1111-4111-8111-111111111111" },
+      "body": { "email": "teammate@example.com" }
+    },
+    "setCardAssignees": {
+      "method": "PATCH",
+      "path": "/api/v1/cards/{card_id}/assignees",
+      "schema": "SetCardAssigneesSchema",
+      "pathParams": { "card_id": "33333333-3333-4333-8333-333333333333" },
+      "body": { "user_ids": ["55555555-5555-4555-8555-555555555555"] }
     }
   }
 }

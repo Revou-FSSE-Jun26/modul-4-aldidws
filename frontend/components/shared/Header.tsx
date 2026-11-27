@@ -18,7 +18,13 @@ function isActive(pathname: string | null, href: string): boolean {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
-/** App header. Rendered only while a user is signed in. */
+/**
+ * App header. Rendered only while a user is signed in.
+ *
+ * Phase 2: hidden on board pages (/boards/*) — BoardDetailView renders its
+ * own board-level header row (spec §4.2) there. On other pages it renders a
+ * slim white strip with the notification bell, nav links and the user menu.
+ */
 export function Header() {
   const { token, currentUser, logout } = useAuth();
   const router = useRouter();
@@ -27,6 +33,8 @@ export function Header() {
   const menuId = useId();
 
   if (!token) return null;
+  // Board pages render their own header row (§4.2) — avoid double chrome.
+  if (pathname?.startsWith("/boards/")) return null;
 
   const displayName = currentUser?.name?.trim() || currentUser?.email || "";
 
@@ -37,11 +45,13 @@ export function Header() {
   }
 
   return (
-    <header className="border-b border-border bg-background">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6 lg:px-8">
-        <span className="text-base font-semibold text-foreground">RevoTask</span>
+    <header className="border-b border-[var(--border)] bg-[var(--bg-panel)]">
+      <div className="flex items-center justify-between gap-2 px-4 py-1.5">
+        <span className="text-[13px] font-semibold text-[var(--text-primary)]">
+          RevoTask
+        </span>
 
-        <div className="flex items-center gap-2 sm:order-last">
+        <div className="flex items-center gap-2">
           <NotificationBell />
           <BaseButton
             variant="secondary"
@@ -49,7 +59,7 @@ export function Header() {
             aria-expanded={menuOpen}
             aria-controls={menuId}
             onClick={() => setMenuOpen((open) => !open)}
-            className="sm:hidden"
+            className="md:hidden"
           >
             Menu
           </BaseButton>
@@ -60,7 +70,7 @@ export function Header() {
           aria-label="Main"
           className={[
             menuOpen ? "flex" : "hidden",
-            "w-full flex-col gap-1 sm:order-none sm:flex sm:w-auto sm:flex-row sm:items-center sm:gap-4",
+            "w-full flex-col gap-1 md:order-none md:flex md:w-auto md:flex-row md:items-center md:gap-3",
           ].join(" ")}
         >
           {LINKS.map((link) => (
@@ -70,16 +80,18 @@ export function Header() {
               aria-current={isActive(pathname, link.href) ? "page" : undefined}
               onClick={() => setMenuOpen(false)}
               className={[
-                "flex min-h-11 items-center rounded px-2 text-sm sm:min-h-0",
+                "flex min-h-9 items-center rounded-[var(--radius-ctrl)] px-2.5 text-[13px] font-medium transition-colors duration-150 md:min-h-0",
                 isActive(pathname, link.href)
-                  ? "font-semibold text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
               ].join(" ")}
             >
               {link.label}
             </Link>
           ))}
-          <span className="px-2 text-sm text-muted-foreground">{displayName}</span>
+          <span className="hidden px-2 text-[13px] text-[var(--text-muted)] md:inline">
+            {displayName}
+          </span>
           <BaseButton variant="secondary" size="sm" onClick={handleLogout}>
             Log out
           </BaseButton>

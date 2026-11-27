@@ -60,6 +60,17 @@ def create_card(current_user, column_id):
                 type: string
                 enum: [Low, Medium, High]
                 example: Medium
+              due_date:
+                type: string
+                format: date-time
+                nullable: true
+                description: ISO 8601 with a UTC offset, year 2000 to 2100.
+                example: "2026-12-01T17:00:00Z"
+              position:
+                type: string
+                enum: [top, bottom]
+                default: bottom
+                description: Place the new card at the top or bottom of the column.
     responses:
       201:
         description: Card created successfully.
@@ -152,8 +163,15 @@ def list_cards(current_user):
         params[key] = values[0] if len(values) == 1 else values
     filters = CardListQuerySchema().load(params)
     rows, total = service.list_cards(current_user, filters)
+    # Each row is now a 5-tuple: (card, column_name, board_id, board_name, assignee_ids)
     return jsonify({
-        "data": [card_with_context_to_dict(r) for r in rows],
+        "data": [
+            card_with_context_to_dict(
+                (card, col_name, b_id, b_name, assignee_ids),
+                assignee_ids=assignee_ids,
+            )
+            for (card, col_name, b_id, b_name, assignee_ids) in rows
+        ],
         "meta": {
             "page": filters["page"],
             "per_page": filters["per_page"],
@@ -197,6 +215,12 @@ def update_card(current_user, card_id):
               description:
                 type: string
                 example: Updated description
+              due_date:
+                type: string
+                format: date-time
+                nullable: true
+                description: ISO 8601 with a UTC offset, year 2000 to 2100. Omitted keeps the value, null clears it.
+                example: "2026-12-01T17:00:00Z"
     responses:
       200:
         description: Updated card data.

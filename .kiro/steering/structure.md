@@ -132,13 +132,13 @@ specs/
 
 ### File Responsibilities
 
-| File | Responsibility |
-|---|---|
-| `requirements.md` | Defines functional and non-functional requirements with acceptance criteria. |
-| `design.md` | Maps acceptance criteria to Flask routes and Next.js pages. |
-| `tasks.md` | Maps every route and page to actionable implementation tasks. |
-| `CHANGELOG.md` | Documents AI-generated specification refinement rounds with before/after evidence. |
-| `playwright/requirements.md` | Defines end-to-end testing requirements and acceptance criteria. |
+| File                         | Responsibility                                                                     |
+| ---------------------------- | ---------------------------------------------------------------------------------- |
+| `requirements.md`            | Defines functional and non-functional requirements with acceptance criteria.       |
+| `design.md`                  | Maps acceptance criteria to Flask routes and Next.js pages.                        |
+| `tasks.md`                   | Maps every route and page to actionable implementation tasks.                      |
+| `CHANGELOG.md`               | Documents AI-generated specification refinement rounds with before/after evidence. |
+| `playwright/requirements.md` | Defines end-to-end testing requirements and acceptance criteria.                   |
 
 ### Rules
 
@@ -165,11 +165,11 @@ guidelines/
 
 ### File Responsibilities
 
-| File | Scope |
-|---|---|
+| File          | Scope                                                                                                      |
+| ------------- | ---------------------------------------------------------------------------------------------------------- |
 | `frontend.md` | Next.js architecture, React components, hooks, client/server boundaries, UI, and frontend API consumption. |
-| `backend.md` | Flask Blueprints, routes, services, validation, authentication, authorization, and error handling. |
-| `database.md` | PostgreSQL schema, SQLAlchemy models, relationships, constraints, indexes, and migrations. |
+| `backend.md`  | Flask Blueprints, routes, services, validation, authentication, authorization, and error handling.         |
+| `database.md` | PostgreSQL schema, SQLAlchemy models, relationships, constraints, indexes, and migrations.                 |
 
 ### Required Guideline Format
 
@@ -179,12 +179,15 @@ Every guideline MUST follow this three-part structure:
 ## Guideline Title
 
 ### Rule
+
 [The mandatory engineering rule.]
 
 ### Rationale
+
 [Why the rule exists and which engineering problem it prevents.]
 
 ### RevoTask Example
+
 [Concrete implementation example using the actual project architecture.]
 ```
 
@@ -431,12 +434,12 @@ Required feature modules:
 
 Each implemented feature SHOULD contain:
 
-| File | Responsibility |
-|---|---|
-| `routes.py` | HTTP endpoint definitions and request/response handling. |
-| `schemas.py` | Request validation and response serialization. |
-| `service.py` | Feature-specific business operations. |
-| `__init__.py` | Blueprint creation and exports, when needed. |
+| File          | Responsibility                                           |
+| ------------- | -------------------------------------------------------- |
+| `routes.py`   | HTTP endpoint definitions and request/response handling. |
+| `schemas.py`  | Request validation and response serialization.           |
+| `service.py`  | Feature-specific business operations.                    |
+| `__init__.py` | Blueprint creation and exports, when needed.             |
 
 Routes MUST remain thin and MUST delegate business operations to the service layer.
 
@@ -610,18 +613,18 @@ Test reports intended as assignment evidence MUST be explicitly retained or uplo
 
 ## 10. Naming Conventions
 
-| Item | Convention | Example |
-|---|---|---|
-| React components | PascalCase | `BoardCard.tsx` |
-| React hooks | camelCase with `use` | `useAuth.ts` |
-| TypeScript utilities | camelCase | `formatDate.ts` |
-| Flask modules | snake_case | `board_service.py` |
-| SQLAlchemy models | PascalCase | `BoardMember` |
-| Database tables | snake_case | `board_members` |
-| API endpoints | lowercase plural nouns | `/api/boards` |
-| Test files | descriptive suffix | `cards.spec.ts` |
-| Documentation | lowercase kebab-case or specified name | `requirements.md` |
-| Environment examples | `.env.example` | `.env.example` |
+| Item                 | Convention                             | Example            |
+| -------------------- | -------------------------------------- | ------------------ |
+| React components     | PascalCase                             | `BoardCard.tsx`    |
+| React hooks          | camelCase with `use`                   | `useAuth.ts`       |
+| TypeScript utilities | camelCase                              | `formatDate.ts`    |
+| Flask modules        | snake_case                             | `board_service.py` |
+| SQLAlchemy models    | PascalCase                             | `BoardMember`      |
+| Database tables      | snake_case                             | `board_members`    |
+| API endpoints        | lowercase plural nouns                 | `/api/boards`      |
+| Test files           | descriptive suffix                     | `cards.spec.ts`    |
+| Documentation        | lowercase kebab-case or specified name | `requirements.md`  |
+| Environment examples | `.env.example`                         | `.env.example`     |
 
 Use the naming conventions defined in the relevant engineering guideline when a more specific convention exists.
 

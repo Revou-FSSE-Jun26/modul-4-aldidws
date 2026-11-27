@@ -14,16 +14,16 @@ interface BaseButtonProps
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    "bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500 disabled:bg-blue-300",
+    "bg-[var(--brand)] text-white hover:bg-[var(--brand-hover)] focus-visible:ring-[var(--brand)] disabled:bg-[var(--brand-light)]",
   secondary:
-    "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus-visible:ring-gray-400 disabled:text-gray-400 disabled:border-gray-200",
+    "bg-[var(--bg-panel)] text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-hover)] focus-visible:ring-[var(--border)] disabled:text-[var(--text-muted)] disabled:border-[var(--border)]",
   danger:
-    "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500 disabled:bg-red-300",
+    "bg-[var(--accent-red)] text-white hover:bg-[var(--accent-red)]/90 focus-visible:ring-[var(--accent-red)] disabled:bg-[var(--accent-red)]/50",
   // `destructive` is the canonical variant name; `danger` is kept as a
   // non-breaking alias mapping to the same classes so existing call sites
   // (e.g. delete buttons) keep working.
   destructive:
-    "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500 disabled:bg-red-300",
+    "bg-[var(--accent-red)] text-white hover:bg-[var(--accent-red)]/90 focus-visible:ring-[var(--accent-red)] disabled:bg-[var(--accent-red)]/50",
 };
 
 // 44px minimum touch target below the `sm` breakpoint.

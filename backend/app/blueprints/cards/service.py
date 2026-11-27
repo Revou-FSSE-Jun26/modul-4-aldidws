@@ -12,11 +12,18 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import func, or_
+from sqlalchemy.orm import selectinload
 
+from app.access import (
+    get_card_for_user,
+    get_column_for_user,
+)
+from app.blueprints.notifications.service import notify_card_moved
 from app.common.exceptions import CardNotFoundException, ColumnNotFoundException
 from app.extensions import db
 from app.models.board import Board
 from app.models.board_column import BoardColumn
+from app.models.board_member import BoardMember
 from app.models.card import Card
 
 
@@ -31,39 +38,32 @@ def _not_deleted():
 
 
 def _get_owned_card(current_user, card_id: uuid.UUID) -> Card:
-    """Return the card whose board is owned by *current_user*, or raise 404.
+    """Return a live card the caller may *write* to, or raise 404.
 
-    Joins Card → BoardColumn → Board so that the ownership check is a single
-    query and no card is returned for a board the caller does not own.
+    Write access means the caller is the card's creator or the board owner;
+    every other caller (including non-members and plain members without the
+    card's tag/creation) receives the same non-disclosing 404.
     """
-    card = db.session.execute(
-        db.select(Card)
-        .join(Card.column)
-        .join(BoardColumn.board)
-        .where(Card.id == card_id)
-        .where(Board.owner_id == current_user.id)
-        .where(_not_deleted())
-    ).scalar_one_or_none()
+    return get_card_for_user(current_user, card_id, write=True)
 
-    if card is None:
-        raise CardNotFoundException()
 
-    return card
+def get_owned_card(current_user, card_id: uuid.UUID) -> Card:
+    """Public wrapper: a live card the caller may read, or raise 404.
+
+    Kept for backward compatibility with service modules (e.g. labels) that
+    still import this name.
+    """
+    return get_card_for_user(current_user, card_id)
 
 
 def _get_owned_column(current_user, column_id: uuid.UUID) -> BoardColumn:
-    """Return the column whose board is owned by *current_user*, or raise 404."""
-    col = db.session.execute(
-        db.select(BoardColumn)
-        .join(BoardColumn.board)
-        .where(BoardColumn.id == column_id)
-        .where(Board.owner_id == current_user.id)
-    ).scalar_one_or_none()
+    """Return a column the caller may *write* to, or raise 404.
 
-    if col is None:
-        raise ColumnNotFoundException()
-
-    return col
+    Card creation is open to every board member (the user can always create
+    a task for themselves to work on); a non-member receives the same
+    non-disclosing 404.
+    """
+    return get_column_for_user(current_user, column_id)
 
 
 def _renormalise_positions(column_id: uuid.UUID, first_id: uuid.UUID | None = None) -> None:
@@ -103,18 +103,38 @@ def create_card(current_user, column_id: uuid.UUID, data: dict) -> Card:
         The newly created ``Card`` instance.
 
     Raises:
-        ColumnNotFoundException: When the column does not exist or its board
-            is not owned by *current_user*.
+        ColumnNotFoundException: When the column does not exist or the caller
+            is not a member of its board (non-disclosing 404).
     """
     _get_owned_column(current_user, column_id)
 
-    max_pos = db.session.execute(
-        db.select(func.max(Card.order))
-        .where(Card.column_id == column_id)
-        .where(_not_deleted())
-    ).scalar()
-
-    order = 0.0 if max_pos is None else max_pos + 1.0
+    if data.get("position") == "top":
+        min_pos = db.session.execute(
+            db.select(func.min(Card.order))
+            .where(Card.column_id == column_id)
+            .where(_not_deleted())
+        ).scalar()
+        if min_pos is None:
+            order = 0.0
+        elif min_pos >= 1.0:
+            order = min_pos - 1.0
+        else:
+            # cards.order has a non-negative check constraint, so make room
+            # at the front by shifting the live cards down by one.
+            db.session.execute(
+                db.update(Card)
+                .where(Card.column_id == column_id)
+                .where(_not_deleted())
+                .values(order=Card.order + 1.0)
+            )
+            order = min_pos
+    else:
+        max_pos = db.session.execute(
+            db.select(func.max(Card.order))
+            .where(Card.column_id == column_id)
+            .where(_not_deleted())
+        ).scalar()
+        order = 0.0 if max_pos is None else max_pos + 1.0
 
     card = Card(
         column_id=column_id,
@@ -122,8 +142,8 @@ def create_card(current_user, column_id: uuid.UUID, data: dict) -> Card:
         title=data["title"],
         description=data.get("description", ""),
         order=order,
-        # priority and status are intentionally omitted — the Card model does
-        # not yet have those columns.
+        due_date=data.get("due_date"),
+        priority=data.get("priority"),  # None when omitted (no priority)
     )
 
     try:
@@ -137,19 +157,10 @@ def create_card(current_user, column_id: uuid.UUID, data: dict) -> Card:
 
 
 def update_card(current_user, card_id: uuid.UUID, data: dict) -> Card:
-    """Partially update a card owned by *current_user*.
+    """Partially update a card the caller may *write* to.
 
-    Args:
-        current_user: The authenticated user requesting the update.
-        card_id: UUID of the card to update.
-        data: Validated request data from ``UpdateCardSchema`` (partial).
-
-    Returns:
-        The updated ``Card`` instance.
-
-    Raises:
-        CardNotFoundException: When the card does not exist or its board is
-            not owned by *current_user*.
+    Write access: card creator OR board owner.  A plain member without the
+    card's tag/creation receives a non-disclosing 404.
     """
     card = _get_owned_card(current_user, card_id)
 
@@ -157,9 +168,12 @@ def update_card(current_user, card_id: uuid.UUID, data: dict) -> Card:
         card.title = data["title"]
     if "description" in data:
         card.description = data["description"]
-    # priority and status are silently ignored until the model gains those
-    # columns; the schema already validates the values so the API contract
-    # is forward-compatible.
+    if "due_date" in data:
+        # Omitted keeps the stored value; an explicit null clears it.
+        card.due_date = data["due_date"]
+    if "priority" in data:
+        # Omitted keeps the stored value; an explicit null clears it.
+        card.priority = data["priority"]
 
     try:
         db.session.commit()
@@ -171,15 +185,10 @@ def update_card(current_user, card_id: uuid.UUID, data: dict) -> Card:
 
 
 def delete_card(current_user, card_id: uuid.UUID) -> None:
-    """Soft-delete a card owned by *current_user* (sets ``deleted_at``).
+    """Soft-delete a card the caller may *write* to (sets ``deleted_at``).
 
-    Args:
-        current_user: The authenticated user requesting the deletion.
-        card_id: UUID of the card to delete.
-
-    Raises:
-        CardNotFoundException: When the card does not exist or its board is
-            not owned by *current_user*.
+    The board owner may delete any card on their board; a plain member may
+    delete only their own or a tagged card.
     """
     card = _get_owned_card(current_user, card_id)
 
@@ -199,10 +208,14 @@ def move_card(
 ) -> Card:
     """Move a card to a new column and/or order, then renormalise.
 
-    Both the source and destination columns must belong to boards owned by
-    *current_user*.  Order values in both the source and destination columns
-    are renormalised so that all cards remain contiguously zero-based after
-    the move.
+    Move rule: the caller must be the board owner, the card's creator, or
+    tagged on the card.  The destination column must live on a board the
+    caller can access.  Order values in both columns are renormalised so
+    they remain contiguous and zero-based after the move.
+
+    A notification is staged for every other board member (the mover is
+    excluded) so teammates see what changed; the mover is not notified
+    about their own action.
 
     Args:
         current_user: The authenticated user requesting the move.
@@ -214,30 +227,32 @@ def move_card(
         The updated ``Card`` instance (refreshed from the database).
 
     Raises:
-        CardNotFoundException: When the card does not exist or its board is
-            not owned by *current_user*.
+        CardNotFoundException: When the card does not exist, the caller is
+            not a member of its board, or the move rule is not met.
         ColumnNotFoundException: When the destination column does not exist
-            or its board is not owned by *current_user*.
+            or the caller is not a member of its board.
     """
-    card = _get_owned_card(current_user, card_id)
+    # Move rule: board owner OR card creator OR tagged on the card.
+    card = get_card_for_user(current_user, card_id, move=True)
 
-    # Verify the destination column is accessible to the caller.
-    _get_owned_column(current_user, column_id)
+    # The destination column must live on a board the caller can access.
+    dest_col = get_column_for_user(current_user, column_id)
 
     old_column_id = card.column_id
 
-    card.column_id = column_id
+    card.column_id = dest_col.id
     card.order = order
 
     # Flush so the ORM reflects the new column before renormalisation queries.
     db.session.flush()
 
-    _renormalise_positions(column_id, first_id=card.id)
+    _renormalise_positions(dest_col.id, first_id=card.id)
 
-    if old_column_id != column_id:
+    if old_column_id != dest_col.id:
         _renormalise_positions(old_column_id)
 
     try:
+        notify_card_moved(dest_col.board_id, card, current_user)
         db.session.commit()
     except Exception:
         db.session.rollback()
@@ -249,8 +264,18 @@ def move_card(
     return card
 
 
+def _accessible_boards_clause(user):
+    """SQL condition: the board is one the user owns or is a member of."""
+    return or_(
+        Board.owner_id == user.id,
+        Board.id.in_(
+            db.select(BoardMember.board_id).where(BoardMember.user_id == user.id)
+        ),
+    )
+
+
 def list_cards(current_user, filters: dict):
-    """Return a page of live cards on boards owned by *current_user*.
+    """Return a page of live cards on boards *current_user* can access.
 
     Args:
         current_user: The authenticated user.
@@ -261,7 +286,9 @@ def list_cards(current_user, filters: dict):
         Tuple of (rows, total). Each row is a tuple of
         (Card, column_name, board_id, board_name).
     """
-    conditions = [Board.owner_id == current_user.id, _not_deleted()]
+    # _accessible_boards_clause returns a single clause; _not_deleted() does too.
+    # A plain list of clauses is what SQLAlchemy's .where() expects when unpacked.
+    conditions = [_accessible_boards_clause(current_user), _not_deleted()]
 
     if filters.get("board_id") is not None:
         conditions.append(Board.id == filters["board_id"])
@@ -288,6 +315,7 @@ def list_cards(current_user, filters: dict):
     per_page = filters.get("per_page", 20)
     rows = db.session.execute(
         db.select(Card, BoardColumn.name, Board.id, Board.name)
+        .options(selectinload(Card.labels))
         .join(Card.column)
         .join(BoardColumn.board)
         .where(*conditions)
@@ -301,4 +329,27 @@ def list_cards(current_user, filters: dict):
         .offset((page - 1) * per_page)
     ).all()
 
-    return [tuple(r) for r in rows], total
+    # Batch-load assignee IDs for all cards on this page (avoids N+1).
+    card_ids = [r[0].id for r in rows]
+    assignee_map: dict[uuid.UUID, list[str]] = {}
+    if card_ids:
+        from app.models.card_assignee import CardAssignee
+
+        assignee_rows = db.session.execute(
+            db.select(CardAssignee.card_id, CardAssignee.user_id).where(
+                CardAssignee.card_id.in_(card_ids)
+            )
+        ).all()
+        for card_id, user_id in assignee_rows:
+            assignee_map.setdefault(card_id, []).append(str(user_id))
+
+    return [
+        (
+            card,
+            column_name,
+            board_id,
+            board_name,
+            assignee_map.get(card.id, []),
+        )
+        for (card, column_name, board_id, board_name) in rows
+    ], total

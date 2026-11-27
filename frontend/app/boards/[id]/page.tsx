@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { BoardDetailView } from "@/components/board/BoardDetailView";
+import { BoardBgWrapper } from "@/components/board/BoardBgWrapper";
 
 /**
  * Board detail page — Server Component shell.
@@ -16,8 +18,14 @@ export default async function BoardDetailPage({
   const { id } = await params;
 
   return (
-    <main className="flex flex-1 flex-col bg-background">
-      <BoardDetailView boardId={id} />
-    </main>
+    <BoardBgWrapper boardId={id} className="flex flex-1 flex-col">
+      <Suspense
+        fallback={
+          <div className="px-4 py-8 sm:px-6 lg:px-8" aria-busy="true" aria-label="Loading board" />
+        }
+      >
+        <BoardDetailView boardId={id} />
+      </Suspense>
+    </BoardBgWrapper>
   );
 }

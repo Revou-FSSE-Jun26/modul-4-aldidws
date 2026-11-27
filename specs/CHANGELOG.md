@@ -420,6 +420,82 @@ Refinements 2 to 6 come from building the Kanban UI (2026-11-24). They are in th
 
 **Evidence:** `backend/tests/api/test_board_routes.py`, `test_column_routes.py`, `test_card_routes.py`. Full backend run: 168 passed (pytest, local test database).
 
+### Refinement 7: Due dates, board labels and board filter (2026-11-24)
+
+**Context:** the product owner asked for Trello-style features and chose the order "tanggal jatuh tempo, lalu label dan filter". Cards had no due date or label, and `requirements.md` listed due dates and labels as out of scope (section 8, D9). Following `structure.md` section 12, the specification is updated before any code.
+
+**Before:** `requirements.md` ended at R14 and listed "due date, overdue filters, sorting, labels" as out of scope. `design.md` section 4 stated that cards have no due date or label column. The route table had 26 routes. `tasks.md` had no task for these features. Board search covered title and description only (R8.5).
+
+**After:**
+
+- `requirements.md`: R15 Card due dates (18 criteria), R16 Board labels (20), R17 Board filter (15); decisions D14 to D21 in section 12.2 (drag while filtered is off, labels match ANY, due dates display in the browser time zone, duplicate label ids are rejected with 400, 404 for other users' resources, two migrations, `Z` format for `due_date`, no per-board label limit). Out of scope (section 8), R4 note, R8.5 and N4.1 annotated, not rewritten.
+- `design.md`: section 17 (data model for `cards.due_date`, `labels`, `card_labels`; routes 27 to 31 and the changes to routes 6, 13, 14, 16, 26; frontend components and pure functions; migration plan and backward compatibility; error handling, validation and invariants; testability) and traceability section 13.4. A known WCAG 2.1.4 deviation of the `f` shortcut is recorded.
+- `tasks.md`: Phase 5 with B14, F14, E2, B15, F15, E3, F16, E4 and X2, all not started, and the route coverage table extended.
+
+**Evidence:** documentation only. No application code was changed and nothing was run, committed, pushed or deployed. Facts relied on were read from `backend/app/models/card.py`, `blueprints/cards/{schema,service,routes}.py`, `blueprints/boards`, `backend/app/__init__.py`, `backend/migrations/versions/e75e73442f21_*.py`, `frontend/lib/cardOrder.ts`, `frontend/hooks/useDragAndDrop.ts` and the installed Next.js 16.4.6 documentation for `useSearchParams`. The date is the system date and the date of the last commit in `git log`. Measured results (test counts, contrast ratios) are in Refinement 10.
+
+### Refinement 8: Design review fixes for due dates, labels and filter (2026-11-25)
+
+**Context:** the design review of Refinement 7 (`.agents/tasks/kanban-features/design-review.md`, iteration 1) returned CHANGES_REQUESTED with 9 medium and 8 nit findings. All were checked against the code by the reviewer. The specification is corrected before any code is written. No product decision of the brief changed.
+
+**Before:**
+
+- R15.6 and `design.md` 17.1 checked the year after converting to UTC, which raises `OverflowError` (500) for `9999-12-31T23:59:59-05:00` and `0001-01-01T00:00:00+05:00`. 17.1 also claimed a date without time is rejected by Marshmallow itself.
+- R17.9 said a `q` over 100 characters is ignored, while 17.3 and 17.5 said it is cut. R17.7 did not say where the empty message shows, and 17.3 would have shown "No cards in this column." in columns with hidden cards.
+- The query-count test counted only `boards`, `board_columns` and `cards`, so it could not see the labels queries. Migration tests had no mechanism, constraint names were deferred, the `BaseBadge` variants were conditional, the label delete confirmation was described as inline, the filter hook could strip `labels` from the URL before the board loaded, and `app/utils/datetime.py` shadowed a standard module name.
+
+**After:**
+
+- `requirements.md`: R15.6 (overflow inputs return 400), R17.7 (message shown once as `role="status"`, no empty text for a column with hidden cards), R17.9 (`q` is cut to 100, the URL is never rewritten because of an ignored value). Criteria counts are unchanged: R15 has 18, R16 has 20, R17 has 15.
+- `design.md`: 17.1 (overflow-safe range check, fixed badge variants `overdue` = `danger`, `soon` = `warning`, `upcoming` = `default`, `meta` node built by `BoardColumn` (corrected in Refinement 9: `MyTasksList` does not use `BoardCard`), `app/utils/time.py`), 17.2 (nine fixed constraint names, query-count assertion over five tables, label delete as a second `BaseModal` with focus return), 17.3 (`ColumnHeader` change, no URL rewrite, keyword and `now` sources), 17.4 (migration test fixture with a temporary database and a visible skip), 17.5 (D21 risk and cap option), new 17.7 with a response to each finding, and updated rows in 13.4.
+- `tasks.md`: B14, F14, B15, F15, F16, E2, E3, E4 and the coverage note updated. All tasks remain not started.
+- Backlogged: a per-board label cap (finding 14). It is a new product rule, so D21 stays and the owner decides.
+
+**Evidence:** documentation only. No application code was changed and nothing was run. Findings were verified by the reviewer against `backend/tests/`, `BaseBadge.tsx`, `CardDetailModal.tsx`, `BoardCard.tsx` and marshmallow 4.4.0. This step re-read `BoardCard.tsx` (it renders `meta` below the title). The date is the system date (the last commit in `git log` is 2026-11-24).
+
+### Refinement 9: Design review fixes, iteration 2, for due dates, labels and filter (2026-11-25)
+
+**Context:** the second design review (`.agents/tasks/kanban-features/design-review.md`, iteration 2) returned CHANGES_REQUESTED with 2 medium and 4 nit findings. They concern frontend files the design told the coder to change. No product decision of the brief changed.
+**Before:**
+
+- `design.md` 17.1 and 17.2 said `MyTasksList` builds a `meta` node and passes it to `BoardCard`. `MyTasksList` does not use `BoardCard` (each row is an `<li>` with a `Link` and a `BaseBadge`), so R15.16 and R16.16 had no valid path for `/my-tasks`.
+- `BoardCard` puts `meta` inside a `<button aria-label="Open card: ...">`. The `aria-label` replaces the content as the accessible name, so the due badge and the label pills were never announced on the board.
+- The return shape of `get_board_detail`, the `board_detail_to_dict` signature and `ViewState` for board labels were not stated; `Card.updated_at` on route 31 was unspecified; an empty `requirements.md` sat untracked in the repository root.
+  **After:**
+- `design.md` 17.1 and 17.2: `MyTasksList` renders the pills and the badge directly in each row `<li>` (`flex-wrap`); `BoardCard` renders `meta` outside the button; `get_board_detail` returns `(board, columns, cards_by_column, labels)`; `board_detail_to_dict` takes `labels`; `ViewState.success` gains `labels`; `set_card_labels` leaves `Card.updated_at` unchanged. New section 17.8 answers each finding; rows of 13.4 updated.
+- `tasks.md`: F14 and F15 updated with the same changes and the new `BoardCard.test.tsx` and `MyTasksList.test.tsx` cases. All tasks remain not started.
+- Backlogged: a per-board label cap (finding 5). D21 stays because it is a new product rule that the owner has not decided; the cap option is recorded in `design.md` 17.5.
+- The stray empty `requirements.md` in the repository root was deleted.
+  **Evidence:** documentation only. No application code was changed and nothing was run. The reviewer verified the findings against `MyTasksList.tsx`, `BoardCard.tsx`, `boards/routes.py` and `BoardDetailView.tsx`; this step re-read `BoardCard.tsx`, `MyTasksList.tsx`, `BoardDetailView.tsx` (`ViewState`) and `boards/routes.py` (lines 112 to 115). The date is the system date (2026-11-25).
+
+### Refinement 10: Due dates, labels and board filter implemented, measured evidence (2026-11-25)
+
+**Context:** tasks B14, F14, E2, B15, F15, E3, F16, E4 and X2 of Phase 5 were implemented in the working tree. Nothing is committed, pushed or deployed, and nothing was run against production.
+
+**Before:** Refinements 7 to 9 described the features and recorded no measured results. Baselines re-measured before the changes: pytest 168 passed, jest 191 tests in 24 suites.
+
+**After (measured locally, final run):**
+
+| Check | Result |
+| --- | --- |
+| `pytest` from `backend/` (`APP_ENV=testing`, local `revotask_test`) | 325 passed, 0 skipped (includes 2 migration tests on temporary databases) |
+| `npx jest` | 339 tests in 39 suites passed |
+| `npx tsc --noEmit` (frontend and `e2e/tsconfig.json`) | exit 0 |
+| `npm run lint` | 0 errors, 1 warning (unused `fireEvent` in `BoardCard.test.tsx`, existed before) |
+| `npm run build` (`NEXT_PUBLIC_API_BASE_URL=https://example.up.railway.app`) | exit 0 |
+| `npm run e2e` against local Flask (5000) and `next start` (3000), database `revotask_e2e` | 26 passed (chromium and mobile), no retries; the baseline was 18 |
+| Migrations `e75e73442f21`, `421f6e5e8ae5`, `43535c2f36bf` on throw-away databases | upgrade, downgrade, upgrade passed; `flask db migrate` reported no changes |
+| Query count of the board read | 5 SELECTs for three data sizes (including 200 labels); `GET /api/v1/cards` 3 SELECTs |
+| Label colour contrast (8 pairs) | 6.38 to 11.86, all at least 4.5 |
+
+New e2e coverage: `board-filter.spec.ts` (3 tests: keyword and label filter with "x of y" and Clear, empty status message, filters in the URL applied when the board opens), a 375 px test in `mobile.spec.ts` with the filter bar open (no horizontal overflow), plus `due-dates.spec.ts` and `labels.spec.ts` from earlier phases. Guard searches found no `waitForTimeout`, no hex value in `frontend/components` and no token in `localStorage` or `sessionStorage` (only tests assert they stay empty).
+
+**Not verified or deviating:**
+
+- The production migration (Railway `flask db upgrade`) was not run.
+- The login redirect keeps only the path, so active board filters are lost after a reload. The first E4 plan assumed the query survives a reload. The e2e test therefore opens a link that already contains `?q=` through `/login?next=`. Keeping the query on the redirect would change behaviour and is left to the product owner.
+- GitHub Actions e2e was not run.
+
 ---
 
 ## Versioned Releases

@@ -1,4 +1,7 @@
+import { LayoutDashboard } from "lucide-react";
 import { BoardsGrid } from "@/components/board/BoardsGrid";
+import { BoardBgWrapper } from "@/components/board/BoardBgWrapper";
+import { PageHeader } from "@/components/shared/PageHeader";
 
 /**
  * Home page — Server Component shell.
@@ -9,18 +12,17 @@ import { BoardsGrid } from "@/components/board/BoardsGrid";
  */
 export default function HomePage() {
   return (
-    <main className="flex-1 bg-background px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        <header className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            My Boards
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            All boards you own, in one place.
-          </p>
-        </header>
-        <BoardsGrid />
-      </div>
-    </main>
+    <BoardBgWrapper className="flex flex-1 flex-col">
+      <PageHeader
+        title="My Boards"
+        description="All boards you own, in one place."
+        icon={<LayoutDashboard size={16} strokeWidth={1.5} />}
+      />
+      <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <BoardsGrid />
+        </div>
+      </main>
+    </BoardBgWrapper>
   );
 }

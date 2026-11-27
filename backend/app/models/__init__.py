@@ -5,8 +5,11 @@
 
 from app.models.user import User  # noqa: F401
 from app.models.board import Board  # noqa: F401
+from app.models.board_member import BoardMember  # noqa: F401
 from app.models.board_column import BoardColumn  # noqa: F401
 from app.models.card import Card  # noqa: F401
+from app.models.card_assignee import CardAssignee  # noqa: F401
 from app.models.card_comment import CardComment  # noqa: F401
 from app.models.refresh_token import RefreshToken  # noqa: F401
 from app.models.notification import Notification  # noqa: F401
+from app.models.label import Label, card_labels  # noqa: F401

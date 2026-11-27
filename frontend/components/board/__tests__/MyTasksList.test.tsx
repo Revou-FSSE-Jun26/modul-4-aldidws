@@ -23,6 +23,9 @@ function item(id: string, title: string, boardId: string, boardName: string, col
     title,
     description: null,
     order: 0,
+    due_date: null,
+    priority: null,
+    labels: [],
     deleted_at: null,
     created_at: stamp,
     updated_at: stamp,
@@ -63,6 +66,44 @@ describe("MyTasksList", () => {
     expect(within(beta).getByText("Plan trip")).toBeInTheDocument();
     expect(within(beta).queryByText("Write spec")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("shows an Overdue badge for a past due date and none without a date", async () => {
+    routeFetch(fetchMock, {
+      [URL1]: jsonResponse(200, {
+        data: [
+          { ...item("1", "Late task", "b-1", "Alpha", "To Do"), due_date: "2020-01-01T00:00:00Z" },
+          item("2", "No date task", "b-1", "Alpha", "To Do"),
+        ],
+        meta: { page: 1, per_page: 50, total: 2 },
+      }),
+    });
+    render(<MyTasksList />);
+    const alpha = await screen.findByRole("region", { name: "Alpha" });
+    const rows = within(alpha).getAllByRole("listitem");
+    expect(within(rows[0]).getByText("Overdue")).toBeInTheDocument();
+    expect(within(rows[1]).queryByText("Overdue")).not.toBeInTheDocument();
+  });
+
+  it("shows the names of all labels of a task", async () => {
+    routeFetch(fetchMock, {
+      [URL1]: jsonResponse(200, {
+        data: [
+          {
+            ...item("1", "Tagged task", "b-1", "Alpha", "To Do"),
+            labels: [
+              { id: "l-1", name: "Bug", color: "red" },
+              { id: "l-2", name: "Docs", color: "blue" },
+            ],
+          },
+        ],
+        meta: { page: 1, per_page: 50, total: 1 },
+      }),
+    });
+    render(<MyTasksList />);
+    const alpha = await screen.findByRole("region", { name: "Alpha" });
+    expect(within(alpha).getByText("Bug")).toBeInTheDocument();
+    expect(within(alpha).getByText("Docs")).toBeInTheDocument();
   });
 
   it("shows the empty state", async () => {

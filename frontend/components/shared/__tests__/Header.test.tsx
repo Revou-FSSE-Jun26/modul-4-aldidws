@@ -28,7 +28,7 @@ describe("Header", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("shows navigation links, user name and bell when signed in", () => {
+  it("shows navigation links, user name and bell when signed in (non-board page)", () => {
     mockUseAuth.mockReturnValue({
       token: "t",
       currentUser: { id: "u", email: "a@b.co", name: "Ann", role: "member", timezone: "UTC" },

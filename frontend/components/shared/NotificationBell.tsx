@@ -1,9 +1,9 @@
 "use client";
 
 import { useId, useState } from "react";
+import { Bell } from "lucide-react";
 import { useNotifications } from "@/hooks/useNotifications";
 import { BaseBadge } from "@/components/shared/BaseBadge";
-import { BaseButton } from "@/components/shared/BaseButton";
 
 const MAX_SHOWN = 20;
 
@@ -28,28 +28,20 @@ export function NotificationBell() {
 
   return (
     <div className="relative">
-      <BaseButton
-        variant="secondary"
-        size="icon"
+      <button
+        type="button"
         aria-label={label}
         aria-expanded={isOpen}
         aria-controls={panelId}
         onClick={() => setIsOpen((open) => !open)}
-        className="relative"
+        className="relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-ctrl)] border border-[var(--border)] bg-[var(--bg-panel)] text-[var(--text-muted)] transition-colors duration-150 hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)] focus-visible:ring-offset-2"
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          className={["h-5 w-5", isFetching ? "opacity-50" : ""].join(" ")}
+        <Bell
+          size={16}
+          strokeWidth={1.5}
+          className={isFetching ? "opacity-50" : ""}
           aria-hidden="true"
-        >
-          <path
-            fillRule="evenodd"
-            d="M10 2a6 6 0 0 0-6 6v1.586l-.707.707A1 1 0 0 0 4 12h12a1 1 0 0 0 .707-1.707L16 9.586V8a6 6 0 0 0-6-6ZM10 18a3 3 0 0 1-2.83-2h5.66A3 3 0 0 1 10 18Z"
-            clipRule="evenodd"
-          />
-        </svg>
+        />
         {unreadCount > 0 && (
           <BaseBadge
             variant="danger"
@@ -59,7 +51,7 @@ export function NotificationBell() {
             {unreadCount > 99 ? "99+" : unreadCount}
           </BaseBadge>
         )}
-      </BaseButton>
+      </button>
 
       {/* Announces count changes to screen readers */}
       <span className="sr-only" aria-live="polite">
@@ -73,19 +65,19 @@ export function NotificationBell() {
           id={panelId}
           role="region"
           aria-label="Notifications"
-          className="absolute right-0 z-40 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-md border border-border bg-background p-2 shadow-lg"
+          className="absolute right-0 z-40 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-[var(--radius-ctrl)] border border-[var(--border)] bg-[var(--bg-panel)] p-2 shadow-[var(--shadow-drag)]"
         >
           {error && (
-            <p role="alert" className="px-2 py-1 text-sm text-destructive">
+            <p role="alert" className="px-2 py-1 text-sm text-[var(--accent-red)]">
               {error}
             </p>
           )}
           {shown.length === 0 && !error ? (
-            <p className="px-2 py-1 text-sm text-muted-foreground">
+            <p className="px-2 py-1 text-sm text-[var(--text-muted)]">
               No notifications yet.
             </p>
           ) : (
-            <ul className="max-h-80 divide-y divide-border overflow-y-auto">
+            <ul className="max-h-80 divide-y divide-[var(--border)] overflow-y-auto">
               {shown.map((n) => (
                 <li key={n.id}>
                   {/* Plain <button> kept on purpose: the whole notification row is
@@ -95,21 +87,21 @@ export function NotificationBell() {
                     onClick={() => {
                       if (!n.is_read) void markRead(n.id);
                     }}
-                    className="flex w-full min-h-11 flex-col items-start gap-0.5 rounded px-2 py-2 text-left hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="flex w-full min-h-11 flex-col items-start gap-0.5 rounded px-2 py-2 text-left hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)]"
                   >
                     <span
                       className={[
-                        "text-sm text-foreground",
+                        "text-sm text-[var(--text-primary)]",
                         n.is_read ? "font-normal" : "font-semibold",
                       ].join(" ")}
                     >
                       {n.title}
                       {!n.is_read && <span className="sr-only"> (unread)</span>}
                     </span>
-                    <span className="text-xs text-muted-foreground">{n.body}</span>
+                    <span className="text-xs text-[var(--text-muted)]">{n.body}</span>
                     <time
                       dateTime={n.created_at}
-                      className="text-xs text-muted-foreground"
+                      className="text-xs text-[var(--text-muted)]"
                     >
                       {new Date(n.created_at).toLocaleString()}
                     </time>
