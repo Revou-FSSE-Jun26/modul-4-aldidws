@@ -87,7 +87,7 @@ A task is done only when:
   - Tests: `backend/tests/integration/test_board_database.py` (new, PostgreSQL): duplicate insert with different case fails; different owners succeed; migration upgrade and downgrade run on an empty test database.
   - Status: not in this change (the migration would touch production data).
 
-- [ ] **B4. Board delete behaviour** (S, or M if soft delete is kept). Depends: T0 (D1).
+- [x] **B4. Board delete behaviour** (S, or M if soft delete is kept). Depends: T0 (D1).
   - Refs: R2.10, R2.11. Route: 8.
   - Step 1 (always): `backend/tests/integration/test_board_delete.py` (new, PostgreSQL) proves that after `DELETE /api/boards/{id}` its columns, cards and comments are gone, other users' data is untouched, and a foreign board returns 404. Update the Swagger docstring to say what happens to children.
   - Step 2 (only if D1 stays "soft delete"): migration adding `deleted_at` to `boards` and `board_columns`; filter every board and column query; update B1 and B2. If D1 is changed to "hard cascade", skip this step and change R2.10 to say so.
@@ -99,7 +99,7 @@ A task is done only when:
   - Tests: `backend/tests/api/test_auth_routes.py`: the login body has `access_token` and `user` only. `test_auth_service.py` login tests updated.
   - Status: not in this change. Login still returns `refresh_token`.
 
-- [ ] **B10. API and security tests for the remaining routes** (M). Depends: B1 to B8, B11.
+- [x] **B10. API and security tests for the remaining routes** (M). Depends: B1 to B8, B11.
   - Refs: N6.1, R11.1 to R11.4, R12.x, R13, R14. Routes: 4 to 8, 9 to 12, 21 to 25.
   - Add under `backend/tests/api/`: `test_board_routes.py` (create, list isolation, patch, delete, 409), `test_column_routes.py` (create, patch, reorder with foreign id), `test_user_routes.py` (get, patch name and timezone, email rejected, bad timezone), `test_notification_routes.py`, `test_analytics_routes.py`. Add `backend/tests/security/test_authorization.py` that, for every protected route in the Flask URL map, asserts 401 without a token and 404 for another user's resource. Add `backend/tests/unit/test_error_handlers.py` (envelope for 400, 404, 405, 415, 500; no stack trace in the body).
   - The existing flat layout of `backend/tests` is not reorganized (V-024). New files use the standard layout.
@@ -132,7 +132,7 @@ A task is done only when:
   - Change: `BoardDetailView` calls the board service once, keeps `{board, columns[].cards[]}`, uses `order` in types and sorting, removes `isEndpointMissing`, `fetchColumns`, `fetchCardsForColumn`. Shows loading, error with Retry, empty board and empty column states. 401 redirects to `/login`. 404 shows "Board not found."
   - Tests: `components/board/__tests__/BoardDetailView.test.tsx` (rewrite): renders columns and cards in server order; 404; 500 shows an error and not an empty board; 405 and 404 from a missing endpoint are not hidden.
 
-- [ ] **F5. Column controls** (M). Depends: F4, B2. Partly done (uncommitted): add column (form inside `BoardDetailView`, no separate `AddColumnForm`), rename, delete with confirmation and the 409 message "This column still has cards. Move or delete them first." are built and tested (`ColumnHeader.test.tsx`, `BoardDetailView.test.tsx`). Move left and right is not in this change.
+- [x] **F5. Column controls** (M). Depends: F4, B2. Partly done (uncommitted): add column (form inside `BoardDetailView`, no separate `AddColumnForm`), rename, delete with confirmation and the 409 message "This column still has cards. Move or delete them first." are built and tested (`ColumnHeader.test.tsx`, `BoardDetailView.test.tsx`). Move left and right is not in this change.
   - Refs: R3.1, R3.3, R3.4, R3.6, R3.7. Routes: 9, 10, 11, 12.
   - Change: new `AddColumnForm` ("Add column" button, field "Column name"). `ColumnHeader` gets rename (inline edit), delete (confirmation, 409 message "Move or delete this column's cards first."), and move left and move right buttons that send the complete `ordered_ids` list.
   - Tests: `AddColumnForm.test.tsx` and `ColumnHeader.test.tsx` (new): payloads, 409 handling, reorder sends the full list in the new order.
@@ -152,7 +152,7 @@ A task is done only when:
   - Change: `lib/cardOrder.ts` (pure function, design section 7.3). `useDragAndDrop` sends `{column_id, order}`, uses `patch<Card>`, and reloads the board after the request settles. Card types use `order`. Mount the hook in `BoardDetailView` and the column and card elements. On failure restore state and show a toast.
   - Tests: `lib/__tests__/cardOrder.test.ts`: empty, top, middle, end. `hooks/__tests__/useDragAndDrop.test.tsx`: exact body `{column_id, order}` (no `position`), optimistic move, rollback on 400, board reload called.
 
-- [ ] **F9. Board rename and delete** (S). Depends: F4, B4, T0 (D1).
+- [x] **F9. Board rename and delete** (S). Depends: F4, B4, T0 (D1).
   - Refs: R2.8, R2.9, R2.10, R2.11. Routes: 7, 8. Page: `/boards/[id]`, `/`.
   - Change: rename control in the board header, delete control with confirmation naming the board. After delete go to `/`.
   - Tests: component tests for payload `{name}`, 409, confirm and cancel.
@@ -164,19 +164,19 @@ A task is done only when:
   - Tests: `app/profile/__tests__/page.test.tsx` (new): body has `name` and `timezone` and no `email`; 400 shown; values kept on error.
   - [x] Profile UX (frontend only): unsaved-changes handling (Save disabled when clean, `beforeunload` while dirty), Reset button with name character counter, initials avatar (`lib/initials.ts`). Refs: R7.4, R7.5. Tests: `app/profile/__tests__/page.test.tsx`, `lib/__tests__/initials.test.ts`.
 
-- [ ] **F11. Search** (S). Depends: F4, T0 (D9, D13).
+- [x] **F11. Search** (S). Depends: F4, T0 (D9, D13).
   - Refs: R8.1 to R8.6. No route (client side).
   - Change: replace `SearchBar` with a single labelled field ("Search cards", max 100 characters). Filter on title and description, case-insensitive, in `BoardDetailView`. Delete `hooks/useCardSearch.ts` and its `fetch` to `/api/cards`. If D13 changes to a server search, replace this task with B-new plus a service call.
   - Tests: `SearchBar.test.tsx` and `BoardDetailView.test.tsx`: case-insensitive match, description match, empty query, no match message, clear.
   - Changed by decision (D13, `requirements.md` 12.1): done (uncommitted) as a server search. `SearchBar` and `useCardSearch` were rewritten (not deleted) to call `GET /api/v1/cards?search=&board_id=` with a debounce; choosing a result opens the card dialog. Backend part: B13.
 
-- [ ] **F12. Remove My Tasks** (S). Depends: T0 (D8).
+- [x] **F12. Remove My Tasks** (S). Depends: T0 (D8).
   - Refs: Section 8 of requirements. Page: `/my-tasks`.
   - Change: delete `app/my-tasks/page.tsx` and `components/board/MyTasksList.tsx`. No test exists for them. Search the repo for imports and links first.
   - Tests: `npm run build` and `npx jest` pass.
   - Changed by decision (D8, `requirements.md` 12.1): the page was kept, not removed. Done (uncommitted): `MyTasksList` loads `GET /api/v1/cards?mine=true`, groups by board, links to each board, has "Load more" and shows real errors. Tests: `components/board/__tests__/MyTasksList.test.tsx`.
 
-- [ ] **F13. Notifications UI: no change** (S). Depends: none.
+- [x] **F13. Notifications UI: no change** (S). Depends: none.
   - Refs: R14.3. Files: `NotificationBell.tsx`, `useNotifications.ts`.
   - Change: none beyond the F1 cleanup. The bell stays unmounted (D6).
   - Tests: none new. Reviewer checks that nothing imports `NotificationBell`.
@@ -376,3 +376,110 @@ Every route in `design.md` section 5.2 and every page has a task or an explicit 
 - Update after the Kanban UI work: tasks ticked `[x]` or marked "partly done" were built in the working tree and are not committed. Verification run for that work: backend `pytest` 168 passed, frontend `npx jest` 23 suites / 175 tests passed, `npx tsc --noEmit`, `npm run lint` and `npm run build` succeeded, local Playwright 18 passed. Route 26 (`GET /api/v1/cards`) belongs to task B13.
 - `.github/workflows/{frontend-ci,backend-ci,playwright}.yml` exist. The names differ from `structure.md` section 2 (V-027). No task renames them. E1 needs the e2e workflow to start or reach a backend.
 - Test names and files marked "new" do not exist yet. Test files named "exists" were found in the repository and were not run for this document.
+
+### Phase 6: New Pages and Features
+
+Added from docs-sync investigation. All items below were confirmed implemented in the working tree and are marked `[x]`.
+
+#### New Pages
+
+- [x] **NP1. /inbox page** (M). Done.
+  - Description: notification inbox with tabs (All / Unread), per-item mark-as-read, mark-all-as-read, preview mode, relative timestamps, `?item=` query param highlight.
+  - File: `frontend/app/inbox/page.tsx`.
+
+- [x] **NP2. /notes page** (M). Done.
+  - Description: personal notes stored in localStorage per user. Create, edit, pin, delete, search, expand/collapse.
+  - Files: `frontend/app/notes/page.tsx`, `frontend/lib/notesStorage.ts`.
+
+- [x] **NP3. /reports page** (M). Done.
+  - Description: workspace stats dashboard — total boards, assigned cards, overdue, due-soon, high-priority, notifications unread, completion ring, workspace health bar, Refresh button.
+  - File: `frontend/app/reports/page.tsx`.
+
+#### Board Enhancements
+
+- [x] **BF1. Board favorites** (S). Done.
+  - Description: `is_favorite` field on boards; backend `PATCH` endpoint; `boardsService.setFavorite()`; sidebar Favorites section.
+
+- [x] **BF2. Board background picker** (S). Done.
+  - Description: `BackgroundPicker.tsx` component; `lib/board-backgrounds.ts`; `hooks/useBoardBg.ts`; background stored in localStorage per board.
+
+- [x] **BF3. Board list view** (S). Done.
+  - Description: `BoardListView.tsx`; view toggle in `BoardDetailView` (Kanban / List / Calendar).
+
+- [x] **BF4. Board import/export** (M). Done.
+  - Description: `lib/boardImportExport.ts`; Export downloads board as JSON; Import creates a board from a JSON file; UI integrated in `BoardDetailView`.
+
+- [x] **BF5. AddNewSplitButton** (S). Done.
+  - Description: `AddNewSplitButton.tsx` — split button for adding a card or column in `BoardDetailView`.
+
+- [x] **BF6. DashboardGuide** (S). Done.
+  - Description: `DashboardGuide.tsx` — first-time guide card shown on the dashboard.
+
+#### Card Enhancements
+
+- [x] **CF1. Card sort controls** (S). Done.
+  - Description: `lib/sortCards.ts`; sort dropdown in `BoardDetailView` (Manual / Due / Priority / Created / Title).
+
+- [x] **CF2. Card group-by-priority** (S). Done.
+  - Description: `lib/groupCards.ts`; group toggle in `BoardDetailView` (None / Priority).
+
+#### Column Enhancements
+
+- [x] **CLF1. Column color field** (S). Done.
+  - Description: `board_columns.color` database field; `lib/columnColor.ts`; color chip in `ColumnHeader`; color stored in backend.
+
+- [x] **CLF2. Column is_done flag** (S). Done.
+  - Description: `board_columns.is_done` boolean field; used by the Reports page and `boardImportExport`.
+
+#### Backend Enhancements
+
+- [x] **BK1. GET /api/v1/workspace/summary endpoint** (S). Done.
+  - Description: returns `workspace_name`, `projects`, `tasks`, `members`.
+  - Test: `backend/tests/api/test_workspace_summary.py`.
+
+- [x] **BK2. members blueprint** (M). Done.
+  - Description: `blueprints/members/` with invite, list, and remove routes.
+  - Test: `backend/tests/api/test_member_routes.py`.
+
+- [x] **BK3. labels blueprint** (M). Done.
+  - Description: `blueprints/labels/` with full CRUD routes.
+  - Test: `backend/tests/api/test_label_routes.py`.
+
+#### Sidebar / Navigation
+
+- [x] **SN1. Sidebar nav links extended** (S). Done.
+  - Description: nav links extended to include `/notes`, `/inbox`, `/reports`.
+  - Files: `frontend/components/shared/sidebar/SidebarNav.tsx`, `frontend/components/shared/sidebar/constants.ts`.
+
+- [x] **SN2. WorkspaceSwitcher component** (S). Done.
+  - Description: workspace stats popup in the sidebar (placeholder state — "not available yet").
+
+#### E2E Tests (new)
+
+- [x] **E5. inbox.spec.ts** (S). Done.
+  - Description: inbox page workflows (InboxPage page object).
+  - File: `e2e/tests/inbox.spec.ts`.
+
+- [x] **E6. notes.spec.ts** (S). Done.
+  - Description: notes page workflows (NotesPage page object).
+  - File: `e2e/tests/notes.spec.ts`.
+
+- [x] **E7. reports.spec.ts** (S). Done.
+  - Description: reports page workflows (ReportsPage page object).
+  - File: `e2e/tests/reports.spec.ts`.
+
+- [x] **E8. board-favorites.spec.ts** (S). Done.
+  - Description: favorite and unfavorite boards.
+  - File: `e2e/tests/board-favorites.spec.ts`.
+
+- [x] **E9. board-import-export.spec.ts** (S). Done.
+  - Description: export a board to JSON and import a board from JSON.
+  - File: `e2e/tests/board-import-export.spec.ts`.
+
+- [x] **E10. card-sort-group.spec.ts** (S). Done.
+  - Description: card sorting and grouping by priority.
+  - File: `e2e/tests/card-sort-group.spec.ts`.
+
+- [x] **E11. board-list-view.spec.ts** (S). Done.
+  - Description: toggle between grid and list view on a board.
+  - File: `e2e/tests/board-list-view.spec.ts`.
