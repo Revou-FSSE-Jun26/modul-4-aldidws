@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { Bell, Inbox as InboxIcon, CheckCheck, Loader2 } from "lucide-react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  Bell,
+  Inbox as InboxIcon,
+  CheckCheck,
+  Loader2,
+  RotateCcw,
+} from "lucide-react";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { loginPath } from "@/lib/loginPath";
 import {
@@ -10,14 +16,41 @@ import {
   markNotificationRead,
 } from "@/lib/services/notificationsService";
 import { BaseButton } from "@/components/shared/BaseButton";
-import { BaseBadge } from "@/components/shared/BaseBadge";
 import { showError } from "@/lib/toast";
 import { ApiError } from "@/lib/errors";
-import { BoardBgWrapper } from "@/components/board/BoardBgWrapper";
-import { PageHeader } from "@/components/shared/PageHeader";
 import type { ApiNotification } from "@/lib/types/api";
 
 type Filter = "all" | "unread";
+
+const PREVIEW_NOTIFICATIONS: ApiNotification[] = [
+  {
+    id: "preview-1",
+    user_id: "preview-user",
+    title: "New card added to In Progress",
+    body: "Budi moved \"API integration review\" to In Progress on test board.",
+    is_read: false,
+    created_at: new Date(Date.now() - 8 * 60_000).toISOString(),
+    updated_at: new Date(Date.now() - 8 * 60_000).toISOString(),
+  },
+  {
+    id: "preview-2",
+    user_id: "preview-user",
+    title: "Mentioned in a comment",
+    body: "@budi mentioned you on \"Design notes & layout polish\": ready for a quick look.",
+    is_read: false,
+    created_at: new Date(Date.now() - 42 * 60_000).toISOString(),
+    updated_at: new Date(Date.now() - 42 * 60_000).toISOString(),
+  },
+  {
+    id: "preview-3",
+    user_id: "preview-user",
+    title: "Card marked complete",
+    body: "\"Setup authentication flow\" was moved to Done.",
+    is_read: true,
+    created_at: new Date(Date.now() - 3 * 3600_000).toISOString(),
+    updated_at: new Date(Date.now() - 3 * 3600_000).toISOString(),
+  },
+];
 
 function relativeTime(iso: string, now: Date): string {
   const t = new Date(iso).getTime();
@@ -49,8 +82,50 @@ function InboxList({
   const pathname = usePathname();
   const [items, setItems] = useState<ApiNotification[]>([]);
   const [unread, setUnread] = useState(0);
-  const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("loading");
+  const [status, setStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("loading");
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [now, setNow] = useState(() => new Date());
+
+  const searchParams = useSearchParams();
+  const itemParam = searchParams.get("item");
+  const handledItemRef = useRef<string | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!itemParam) {
+      handledItemRef.current = null;
+      return;
+    }
+    if (status !== "ready" || handledItemRef.current === itemParam) return;
+
+    // The "Unread" tab could hide the item, so switch to "All" first.
+    if (filter !== "all") {
+      onFilterChange("all");
+      return;
+    }
+
+    handledItemRef.current = itemParam;
+    const target = items.find((n) => n.id === itemParam);
+    if (target) {
+      setHighlightId(target.id);
+      requestAnimationFrame(() =>
+        document
+          .getElementById(`notification-${target.id}`)
+          ?.scrollIntoView({ block: "center", behavior: "smooth" }),
+      );
+      void handleRead(target);
+    }
+    router.replace(pathname, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemParam, status, filter, items]);
+
+  useEffect(() => {
+    if (!highlightId) return;
+    const t = window.setTimeout(() => setHighlightId(null), 2500);
+    return () => window.clearTimeout(t);
+  }, [highlightId]);
 
   // Re-render the relative time labels every minute while the page is open.
   useEffect(() => {
@@ -60,6 +135,7 @@ function InboxList({
 
   function load() {
     setStatus("loading");
+    setIsPreviewMode(false);
     listNotifications(token)
       .then((res) => {
         setItems(res.items);
@@ -72,117 +148,232 @@ function InboxList({
           return;
         }
         setStatus("error");
-        showError(err instanceof ApiError ? err.message : "Could not load notifications.");
+        showError(
+          err instanceof ApiError ? err.message : "Could not load notifications.",
+        );
       });
   }
 
   useEffect(load, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  function handlePreviewNotifications() {
+    setIsPreviewMode(true);
+    setItems(PREVIEW_NOTIFICATIONS);
+    setUnread(PREVIEW_NOTIFICATIONS.filter((n) => !n.is_read).length);
+  }
+
   async function handleRead(n: ApiNotification) {
     if (n.is_read) return;
-    // Optimistically mark so the UI updates immediately even if the network lags.
-    setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
+    setItems((prev) =>
+      prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)),
+    );
     setUnread((c) => Math.max(0, c - 1));
+
+    if (isPreviewMode) return;
+
     try {
       await markNotificationRead(token, n.id);
     } catch (err) {
-      // Roll back on failure.
-      setItems((prev) => prev.map((x) => (x.id === n.id ? { ...n, is_read: false } : x)));
+      setItems((prev) =>
+        prev.map((x) => (x.id === n.id ? { ...x, is_read: false } : x)),
+      );
       setUnread((c) => c + 1);
-      showError(err instanceof ApiError ? err.message : "Could not mark as read.");
+      showError(
+        err instanceof ApiError ? err.message : "Could not mark as read.",
+      );
     }
   }
 
   async function markAll() {
     const pending = items.filter((n) => !n.is_read);
     if (pending.length === 0) return;
-    await Promise.all(pending.map((n) => markNotificationRead(token, n.id)));
+
     setItems((prev) => prev.map((n) => ({ ...n, is_read: true })));
     setUnread(0);
+
+    if (isPreviewMode) return;
+
+    try {
+      await Promise.all(pending.map((n) => markNotificationRead(token, n.id)));
+    } catch (err) {
+      load();
+      showError(
+        err instanceof ApiError ? err.message : "Could not mark all as read.",
+      );
+    }
   }
 
-  const visible = filter === "unread" ? items.filter((n) => !n.is_read) : items;
+  const visible =
+    filter === "unread" ? items.filter((n) => !n.is_read) : items;
 
   if (status === "loading") {
     return (
-      <div className="flex flex-col gap-3" aria-busy="true" aria-label="Loading notifications">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div
-            key={i}
-            className="h-20 animate-pulse rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)]"
-            aria-hidden="true"
-          />
-        ))}
+      <div className="flex w-full flex-1 flex-col gap-5">
+        <div className="h-32 animate-pulse rounded-2xl bg-[#DCE5CC]/70" />
+        <div className="h-10 animate-pulse rounded-xl border border-[#E6E8E3] bg-white" />
+        <div className="h-64 animate-pulse rounded-2xl border border-[#E6E8E3] bg-white" />
       </div>
     );
   }
 
   if (status === "error") {
     return (
-      <div className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)] p-6">
-        <p role="alert" className="text-sm text-[var(--text-secondary)]">
-          Could not load your notifications.
-        </p>
-        <BaseButton variant="secondary" className="mt-3" onClick={load}>
-          Retry
-        </BaseButton>
+      <div className="flex w-full flex-1 flex-col gap-5">
+        <section className="flex flex-col justify-between gap-4 rounded-2xl bg-[#DCE5CC] px-7 py-6 sm:flex-row sm:items-center">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4E6356]">
+              YOUR UPDATES, IN ONE PLACE
+            </p>
+            <h1 className="mt-1 font-serif text-3xl italic tracking-tight text-[#162B22] sm:text-[34px] sm:leading-tight">
+              Inbox
+            </h1>
+            <p className="mt-1.5 text-[13px] text-[#3F5347]">
+              Keep track of comments, mentions, and activity from your boards.
+            </p>
+          </div>
+        </section>
+
+        <div className="rounded-2xl border border-[#E6E8E3] bg-white p-6">
+          <p role="alert" className="text-sm text-[#3F5347]">
+            Could not load your notifications.
+          </p>
+          <BaseButton
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="mt-3 cursor-pointer"
+            onClick={load}
+          >
+            Retry
+          </BaseButton>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex gap-1" role="tablist" aria-label="Filter notifications">
-          {(["all", "unread"] as const).map((f) => (
-            <button
-              key={f}
-              type="button"
-              role="tab"
-              aria-selected={filter === f}
-              onClick={() => onFilterChange(f)}
-              className={[
-                "rounded-[var(--radius-ctrl)] px-3 py-1.5 text-xs font-medium transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)]",
-                filter === f
-                  ? "bg-[var(--brand)] text-white"
-                  : "bg-[var(--bg-panel)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
-              ].join(" ")}
-            >
-              {f === "all" ? "All" : "Unread"}
-            </button>
-          ))}
+    <div className="flex w-full flex-1 flex-col gap-5">
+      {/* 1. Hero Banner (Sage Green Card) */}
+      <section
+        aria-label="Inbox overview"
+        className="flex flex-col justify-between gap-6 rounded-2xl bg-[#DCE5CC] px-7 py-6 sm:flex-row sm:items-center"
+      >
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4E6356]">
+            YOUR UPDATES, IN ONE PLACE
+          </p>
+          <h1 className="mt-1 truncate font-serif text-3xl italic tracking-tight text-[#162B22] sm:text-[34px] sm:leading-tight">
+            Inbox
+          </h1>
+          <p className="mt-1.5 text-[13px] text-[#3F5347]">
+            Keep track of comments, mentions, and activity from your boards.
+          </p>
         </div>
 
-        {filter === "all" && unread > 0 && (
-          <div className="ml-auto flex items-center gap-2">
-            <BaseBadge variant="warning">{unread} unread</BaseBadge>
-            <BaseButton variant="secondary" size="sm" onClick={markAll} disabled={unread === 0}>
-              <CheckCheck size={14} aria-hidden="true" /> Mark all read
-            </BaseButton>
+        <div className="flex shrink-0 items-center gap-5 border-t border-[#C4D1B1] pt-4 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
+          <div>
+            <p className="text-2xl font-semibold leading-none text-[#162B22]">
+              {unread}
+            </p>
+            <p className="mt-1.5 text-xs text-[#4E6356]">unread updates</p>
           </div>
-        )}
+        </div>
+      </section>
+
+      {/* 2. Sub-bar Tabs & Mark All As Read */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E6E8E3]">
+        <div
+          className="flex items-center gap-6"
+          role="tablist"
+          aria-label="Filter notifications"
+        >
+          {(["all", "unread"] as const).map((f) => {
+            const active = filter === f;
+            return (
+              <button
+                key={f}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => onFilterChange(f)}
+                className={[
+                  "inline-flex cursor-pointer items-center gap-1.5 border-b-2 pb-3 text-[13px] transition-colors",
+                  active
+                    ? "border-[#16382C] font-semibold text-[#162B22]"
+                    : "border-transparent font-medium text-[#6E7A73] hover:text-[#162B22]",
+                ].join(" ")}
+              >
+                <span>{f === "all" ? "All" : "Unread"}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-2 pb-2">
+          {isPreviewMode && (
+            <button
+              type="button"
+              onClick={load}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[#DCDFD8] bg-white px-3 py-1.5 text-xs font-medium text-[#3F5347] transition-colors hover:bg-[#F3F4F0]"
+            >
+              <RotateCcw size={13} strokeWidth={1.75} aria-hidden="true" />
+              <span>Sync live</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            disabled={unread === 0}
+            onClick={() => void markAll()}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[#E6E8E3] bg-white px-3 py-1.5 text-xs font-medium text-[#3F5347] transition-colors hover:bg-[#FAFBF8] disabled:cursor-not-allowed disabled:border-[#ECEEE9] disabled:bg-[#F9FAF7] disabled:text-[#A3ABA6]"
+          >
+            <CheckCheck size={13} strokeWidth={1.75} aria-hidden="true" />
+            <span>Mark all as read</span>
+          </button>
+        </div>
       </div>
 
-      {/* List */}
+      {/* 3. Notification List or Empty State */}
       {visible.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)] px-6 py-12 text-center">
-          <InboxIcon size={32} strokeWidth={1.25} aria-hidden="true" className="text-[var(--text-muted)]" />
-          <p className="text-sm text-[var(--text-secondary)]">
-            {filter === "unread" ? "No unread notifications." : "No notifications yet."}
+        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-[#E6E8E3] bg-white px-6 py-20 text-center">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#EEF2E6] text-[#4E6356]">
+            <InboxIcon size={20} strokeWidth={1.75} aria-hidden="true" />
+          </div>
+          <p className="mt-1 text-sm font-semibold text-[#162B22]">
+            {filter === "unread"
+              ? "No unread notifications."
+              : "No notifications yet."}
           </p>
-          <p className="max-w-sm text-xs text-[var(--text-muted)]">
-            Activity from your boards — new cards, comments, and mentions — will appear here.
+          <p className="max-w-sm text-xs leading-relaxed text-[#6E7A73]">
+            Activity from your boards — new cards, comments, and mentions —
+            will appear here.
           </p>
+
+          {filter === "all" && !isPreviewMode && (
+            <button
+              type="button"
+              onClick={handlePreviewNotifications}
+              className="mt-2 inline-flex cursor-pointer items-center justify-center rounded-lg bg-[#16382C] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-[#1E4A3B]"
+            >
+              Preview notifications
+            </button>
+          )}
         </div>
       ) : (
-        <ul role="list" className="flex flex-col gap-2" aria-label={`${visible.length} notifications`}>
+        <ul
+          role="list"
+          className="flex flex-col gap-2.5"
+          aria-label={`${visible.length} notifications`}
+        >
           {visible.map((n) => (
-            <li key={n.id}>
+            <li key={n.id} id={`notification-${n.id}`}>
               <div
                 className={[
-                  "group flex items-start gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)] p-4 transition-colors duration-150",
-                  n.is_read ? "opacity-80" : "border-l-2 border-l-[var(--brand)]",
+                  "flex items-start gap-3.5 rounded-2xl border bg-white p-4 transition-colors",
+                  n.is_read
+                    ? "border-[#E6E8E3] opacity-80"
+                    : "border-[#C4D1B1] border-l-4 border-l-[#16382C]",
+                  highlightId === n.id ? "ring-2 ring-[#4E7A58]" : "",
                 ].join(" ")}
               >
                 <span
@@ -190,38 +381,45 @@ function InboxList({
                   className={[
                     "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
                     n.is_read
-                      ? "bg-[var(--bg-hover)] text-[var(--text-muted)]"
-                      : "bg-[var(--brand-soft)] text-[var(--brand)]",
+                      ? "bg-[#F3F4F0] text-[#7C8680]"
+                      : "bg-[#DCE5CC] text-[#16382C]",
                   ].join(" ")}
                 >
-                  <Bell size={14} strokeWidth={1.5} />
+                  <Bell size={14} strokeWidth={1.75} />
                 </span>
+
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
                     <p
                       className={[
                         "truncate text-sm",
-                        n.is_read ? "text-[var(--text-secondary)]" : "font-semibold text-[var(--text-primary)]",
+                        n.is_read
+                          ? "font-medium text-[#4E6356]"
+                          : "font-semibold text-[#162B22]",
                       ].join(" ")}
                     >
                       {n.title}
                     </p>
                     <time
                       dateTime={n.created_at}
-                      className="shrink-0 text-xs text-[var(--text-muted)]"
+                      className="shrink-0 text-xs text-[#7C8680]"
                     >
                       {relativeTime(n.created_at, now)}
                     </time>
                   </div>
-                  <p className="mt-1 line-clamp-2 text-sm text-[var(--text-secondary)]">{n.body}</p>
+
+                  <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-[#4E6356]">
+                    {n.body}
+                  </p>
 
                   {!n.is_read && (
                     <button
                       type="button"
                       onClick={() => void handleRead(n)}
-                      className="mt-2 inline-flex items-center gap-1 rounded-[var(--radius-ctrl)] px-2 py-1 text-xs font-medium text-[var(--brand)] transition-colors duration-150 hover:bg-[var(--brand-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)]"
+                      className="mt-2.5 inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[#16382C] transition-colors hover:bg-[#EBF0E2]"
                     >
-                      <CheckCheck size={12} aria-hidden="true" /> Mark as read
+                      <CheckCheck size={13} aria-hidden="true" />
+                      <span>Mark as read</span>
                     </button>
                   )}
                 </div>
@@ -235,38 +433,38 @@ function InboxList({
 }
 
 /**
- * Inbox — lists the user's notifications (GET /api/notifications) with an
- * unread filter, per-item "mark as read", and "mark all read".
- *
- * Server Component shell + client component for the authenticated fetch.
+ * Inbox — lists the user's notifications with an unread filter,
+ * per-item "mark as read", "mark all as read", and an empty-state preview.
  */
 export default function InboxPage() {
   const { token, isAuthLoading } = useRequireAuth();
   const [filter, setFilter] = useState<Filter>("all");
 
   return (
-    <BoardBgWrapper className="flex flex-1 flex-col">
-      <PageHeader
-        title="Inbox"
-        description="Notifications from your boards."
-        icon={<InboxIcon size={16} strokeWidth={1.5} />}
-      />
-      <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-3xl">
-          {isAuthLoading || !token ? (
-            <div
-              className="flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)] p-10"
-              aria-busy="true"
-              aria-label="Loading inbox"
-            >
-              <Loader2 size={20} strokeWidth={1.5} aria-hidden="true" className="animate-spin text-[var(--text-muted)]" />
-              <p className="text-sm text-[var(--text-muted)]">Loading…</p>
-            </div>
-          ) : (
-            <InboxList token={token} filter={filter} onFilterChange={setFilter} />
-          )}
+    <div className="flex min-h-full w-full flex-1 flex-col px-4 py-5 sm:px-6 lg:px-8">
+      {isAuthLoading || !token ? (
+        <div
+          className="flex flex-col items-center gap-3 rounded-2xl border border-[#E6E8E3] bg-white p-10"
+          aria-busy="true"
+          aria-label="Loading inbox"
+        >
+          <Loader2
+            size={20}
+            strokeWidth={1.5}
+            aria-hidden="true"
+            className="animate-spin text-[#6E7A73]"
+          />
+          <p className="text-sm text-[#6E7A73]">Loading…</p>
         </div>
-      </main>
-    </BoardBgWrapper>
+      ) : (
+        <Suspense fallback={null}>
+          <InboxList
+            token={token}
+            filter={filter}
+            onFilterChange={setFilter}
+          />
+        </Suspense>
+      )}
+    </div>
   );
 }

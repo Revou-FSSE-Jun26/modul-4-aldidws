@@ -67,7 +67,7 @@ function LoginForm() {
     <AuthBackground>
       <div className="w-full max-w-sm space-y-6 rounded-[var(--radius-panel)] bg-[var(--bg-panel)] p-8 shadow-[var(--shadow-panel)]">
         <header className="text-center">
-          <h1 className="text-3xl font-black tracking-tight text-foreground">
+          <h1 className="text-3xl font-black tracking-tight text-[#0F3D2E]">
             Sign in
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">

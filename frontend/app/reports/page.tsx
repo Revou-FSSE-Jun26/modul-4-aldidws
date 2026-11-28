@@ -18,14 +18,11 @@ import { loginPath } from "@/lib/loginPath";
 import { listBoards } from "@/lib/services/boardsService";
 import { listCards } from "@/lib/services/cardsService";
 import { listNotifications } from "@/lib/services/notificationsService";
-import type { CardListItem, Paginated } from "@/lib/types/api";
+import type { Board, CardListItem, Paginated } from "@/lib/types/api";
 import { getDueState } from "@/lib/dueDate";
 import { BaseButton } from "@/components/shared/BaseButton";
 import { ApiError } from "@/lib/errors";
 import { showError } from "@/lib/toast";
-import { BoardBgWrapper } from "@/components/board/BoardBgWrapper";
-import { PageHeader } from "@/components/shared/PageHeader";
-import type { Board } from "@/lib/types/api";
 
 /**
  * Fetch every page of `GET /api/v1/cards?mine=true` and concatenate.
@@ -75,14 +72,14 @@ interface ReportStats {
   completion: number | null;
 }
 
-/**
- * Heuristic for "done" columns. We can't reliably know which column a board
- * marks as done without an `is_done` flag on the card list, so we use a small
- * set of common names. This is intentional — the Reports page is a snapshot,
- * not a canonical "done" counter. If your board names its done column
- * something else, it will be counted as open.
- */
-const DONE_COLUMN_NAMES = new Set(["done", "completed", "complete", "finished", "archive", "archived"]);
+const DONE_COLUMN_NAMES = new Set([
+  "done",
+  "completed",
+  "complete",
+  "finished",
+  "archive",
+  "archived",
+]);
 
 function computeStats(
   boards: Board[],
@@ -97,8 +94,12 @@ function computeStats(
   }).length;
   const openCards = totalCards - doneCards;
 
-  const overdue = cards.filter((c) => getDueState(c.due_date, now) === "overdue").length;
-  const soon = cards.filter((c) => getDueState(c.due_date, now) === "soon").length;
+  const overdue = cards.filter(
+    (c) => getDueState(c.due_date, now) === "overdue",
+  ).length;
+  const soon = cards.filter(
+    (c) => getDueState(c.due_date, now) === "soon",
+  ).length;
   const highPriority = cards.filter((c) => c.priority === "high").length;
 
   return {
@@ -112,8 +113,20 @@ function computeStats(
     highPriorityCards: highPriority,
     unreadNotifications: notifications.unread,
     totalNotifications: notifications.total,
-    completion: totalCards === 0 ? null : Math.round((doneCards / totalCards) * 100),
+    completion:
+      totalCards === 0 ? null : Math.round((doneCards / totalCards) * 100),
   };
+}
+
+function formatSnapshotLabel(updatedAt: Date | null, now: Date): string {
+  if (!updatedAt) return "Just now";
+  const diffSec = Math.floor((now.getTime() - updatedAt.getTime()) / 1000);
+  if (diffSec < 45) return "Just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  return updatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 // ---------------------------------------------------------------------------
@@ -124,52 +137,41 @@ function StatTile({
   label,
   value,
   icon,
-  accent,
+  iconBgClass,
+  valueClass,
   hint,
 }: {
   label: string;
   value: string | number;
   icon: React.ReactNode;
-  accent?: "default" | "success" | "warning" | "danger" | "brand";
+  iconBgClass: string;
+  valueClass?: string;
   hint?: string;
 }) {
-  const accentClasses: Record<string, string> = {
-    default: "text-[var(--text-secondary)]",
-    success: "text-[var(--pill-green)]",
-    warning: "text-[var(--pill-orange)]",
-    danger: "text-[var(--accent-red)]",
-    brand: "text-[var(--brand)]",
-  };
-  const iconClasses: Record<string, string> = {
-    default: "bg-[var(--bg-hover)] text-[var(--text-muted)]",
-    success: "bg-[var(--col-green-bg)] text-[var(--col-green-fg)]",
-    warning: "bg-[var(--col-orange-bg)] text-[var(--col-orange-fg)]",
-    danger: "bg-[var(--col-red-bg)] text-[var(--col-red-fg)]",
-    brand: "bg-[var(--brand-soft)] text-[var(--brand)]",
-  };
-
   return (
-    <div className="flex items-start gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)] p-4 shadow-[var(--shadow-card)]">
+    <div className="flex items-start gap-3.5 rounded-2xl border border-[#E6E8E3] bg-white p-5">
       <span
         aria-hidden="true"
         className={[
-          "flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-ctrl)]",
-          iconClasses[accent ?? "default"] ?? iconClasses.default,
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+          iconBgClass,
         ].join(" ")}
       >
         {icon}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium text-[var(--text-muted)]">{label}</p>
+        <p className="text-xs font-medium text-[#6E7A73]">{label}</p>
         <p
           className={[
-            "mt-0.5 text-2xl font-semibold tracking-tight",
-            accentClasses[accent ?? "default"] ?? accentClasses.default,
+            "mt-1 text-2xl font-semibold leading-tight tracking-tight",
+            valueClass ?? "text-[#162B22]",
           ].join(" ")}
         >
           {value}
         </p>
-        {hint && <p className="mt-0.5 text-xs text-[var(--text-muted)]">{hint}</p>}
+        {hint && (
+          <p className="mt-1 truncate text-[11px] text-[#8C9590]">{hint}</p>
+        )}
       </div>
     </div>
   );
@@ -182,44 +184,46 @@ function ProgressRing({
   percent: number;
   label: string;
 }) {
-  // r=34, stroke=6 → circumference ≈ 207.35
-  const C = 2 * Math.PI * 34;
-  const offset = C * (1 - percent / 100);
+  const clamped = Math.max(0, Math.min(100, percent));
+  const radius = 32;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - clamped / 100);
+
   return (
     <div className="flex items-center gap-4">
       <div
-        className="relative h-20 w-20"
+        className="relative flex h-20 w-20 shrink-0 items-center justify-center"
         role="img"
-        aria-label={`${label}: ${percent}%`}
+        aria-label={`${label}: ${clamped}%`}
       >
         <svg viewBox="0 0 80 80" className="h-full w-full -rotate-90">
           <circle
             cx="40"
             cy="40"
-            r="34"
+            r={radius}
             fill="none"
-            stroke="var(--bg-hover)"
+            stroke="#ECEEE9"
             strokeWidth="6"
           />
           <circle
             cx="40"
             cy="40"
-            r="34"
+            r={radius}
             fill="none"
-            stroke="var(--brand)"
+            stroke="#16382C"
             strokeWidth="6"
             strokeLinecap="round"
-            strokeDasharray={C}
+            strokeDasharray={circumference}
             strokeDashoffset={offset}
           />
         </svg>
-        <span className="absolute inset-0 flex items-center justify-center text-lg font-semibold text-[var(--text-primary)]">
-          {percent}%
+        <span className="absolute inset-0 flex items-center justify-center text-sm font-semibold text-[#162B22]">
+          {clamped}%
         </span>
       </div>
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-[var(--text-primary)]">{label}</p>
-        <p className="text-xs text-[var(--text-muted)]">
+        <p className="text-sm font-semibold text-[#162B22]">{label}</p>
+        <p className="mt-0.5 text-xs text-[#7C8680]">
           Done cards out of all of your cards
         </p>
       </div>
@@ -234,14 +238,20 @@ function ReportsContent({ token }: { token: string }) {
   type FetchState =
     | { status: "idle" }
     | { status: "loading" }
-    | { status: "ready"; stats: ReportStats }
+    | { status: "ready"; stats: ReportStats; updatedAt: Date }
     | { status: "error"; message: string };
 
   const [state, setState] = useState<FetchState>({ status: "idle" });
-  const [now] = useState(() => new Date());
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   function load() {
     setState({ status: "loading" });
+    const snapshotNow = new Date();
     Promise.all([
       listBoards(token),
       listAllMyCards(token),
@@ -252,9 +262,10 @@ function ReportsContent({ token }: { token: string }) {
           boards,
           cards,
           { total: notifs.items.length, unread: notifs.unreadCount },
-          now,
+          snapshotNow,
         );
-        setState({ status: "ready", stats });
+        setNow(snapshotNow);
+        setState({ status: "ready", stats, updatedAt: snapshotNow });
       })
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.isUnauthorized) {
@@ -272,59 +283,149 @@ function ReportsContent({ token }: { token: string }) {
 
   if (state.status === "idle" || state.status === "loading") {
     return (
-      <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading reports">
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div
+        className="flex w-full flex-1 flex-col gap-5"
+        aria-busy="true"
+        aria-label="Loading reports"
+      >
+        <div className="h-32 animate-pulse rounded-2xl bg-[#DCE5CC]/70" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
-              className="h-28 animate-pulse rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)]"
+              className="h-28 animate-pulse rounded-2xl border border-[#E6E8E3] bg-white"
               aria-hidden="true"
             />
           ))}
         </div>
-        <div className="h-32 animate-pulse rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)]" aria-hidden="true" />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-36 animate-pulse rounded-2xl border border-[#E6E8E3] bg-white"
+              aria-hidden="true"
+            />
+          ))}
+        </div>
       </div>
     );
   }
 
   if (state.status === "error") {
     return (
-      <div className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)] p-6">
-        <p role="alert" className="text-sm text-[var(--text-secondary)]">
-          {state.message}
-        </p>
-        <BaseButton variant="secondary" className="mt-3" onClick={load}>
-          <RefreshCw size={14} aria-hidden="true" /> Try again
-        </BaseButton>
+      <div className="flex w-full flex-1 flex-col gap-5">
+        <section className="flex flex-col justify-between gap-4 rounded-2xl bg-[#DCE5CC] px-7 py-6 sm:flex-row sm:items-center">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4E6356]">
+              A CLEAR VIEW OF YOUR WORK
+            </p>
+            <h1 className="mt-1 font-serif text-3xl italic tracking-tight text-[#162B22] sm:text-[34px] sm:leading-tight">
+              Reports
+            </h1>
+            <p className="mt-1.5 text-[13px] text-[#3F5347]">
+              Track momentum, spot priorities, and see what needs your attention.
+            </p>
+          </div>
+        </section>
+
+        <div className="rounded-2xl border border-[#E6E8E3] bg-white p-6">
+          <p role="alert" className="text-sm text-[#3F5347]">
+            {state.message}
+          </p>
+          <BaseButton
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="mt-3 cursor-pointer"
+            onClick={load}
+          >
+            <RefreshCw size={14} aria-hidden="true" /> Try again
+          </BaseButton>
+        </div>
       </div>
     );
   }
 
-  const { stats } = state;
+  const { stats, updatedAt } = state;
+  const isHealthy = stats.overdueCards === 0;
+  const healthRatio =
+    stats.totalCards === 0
+      ? 100
+      : Math.max(
+          15,
+          Math.round(
+            ((stats.totalCards - stats.overdueCards) / stats.totalCards) * 100,
+          ),
+        );
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Top stat tiles */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div className="flex w-full flex-1 flex-col gap-5">
+      {/* 1. Hero Banner (Sage Green Card) */}
+      <section
+        aria-label="Workspace reports overview"
+        className="flex flex-col justify-between gap-6 rounded-2xl bg-[#DCE5CC] px-7 py-6 sm:flex-row sm:items-center"
+      >
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4E6356]">
+            A CLEAR VIEW OF YOUR WORK
+          </p>
+          <h1 className="mt-1 truncate font-serif text-3xl italic tracking-tight text-[#162B22] sm:text-[34px] sm:leading-tight">
+            Reports
+          </h1>
+          <p className="mt-1.5 text-[13px] text-[#3F5347]">
+            Track momentum, spot priorities, and see what needs your attention.
+          </p>
+        </div>
+
+        <div className="w-full shrink-0 sm:w-52">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#5B7062]">
+            WORKSPACE HEALTH
+          </p>
+          <p className="mt-1 text-xl font-semibold text-[#162B22]">
+            {isHealthy ? "On track" : "Needs attention"}
+          </p>
+          <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-[#C2D0B0]">
+            <div
+              className="h-full rounded-full bg-[#2B6E4E] transition-all duration-300"
+              style={{ width: `${isHealthy ? 100 : healthRatio}%` }}
+            />
+          </div>
+          <p className="mt-1.5 text-[11px] text-[#5B7062]">
+            {isHealthy
+              ? "Nothing overdue"
+              : `${stats.overdueCards} overdue ${stats.overdueCards === 1 ? "card" : "cards"}`}
+          </p>
+        </div>
+      </section>
+
+      {/* 2. Top Stat Tiles (4 Columns) */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile
           label="Boards"
           value={stats.totalBoards}
-          icon={<Layers size={18} strokeWidth={1.5} aria-hidden="true" />}
-          accent="brand"
+          icon={<Layers size={17} strokeWidth={1.75} aria-hidden="true" />}
+          iconBgClass="bg-[#E8EEF9] text-[#365B9E]"
           hint={`${stats.favoriteBoards} pinned to sidebar`}
         />
         <StatTile
           label="My cards"
           value={stats.totalCards}
-          icon={<Square size={18} strokeWidth={1.5} aria-hidden="true" />}
-          accent="default"
+          icon={<Square size={17} strokeWidth={1.75} aria-hidden="true" />}
+          iconBgClass="bg-[#F3F4F0] text-[#7C8680]"
           hint={`${stats.openCards} open, ${stats.doneCards} done`}
         />
         <StatTile
           label="Overdue"
           value={stats.overdueCards}
-          icon={<AlertTriangle size={18} strokeWidth={1.5} aria-hidden="true" />}
-          accent={stats.overdueCards > 0 ? "danger" : "success"}
+          icon={
+            <AlertTriangle size={17} strokeWidth={1.75} aria-hidden="true" />
+          }
+          iconBgClass={
+            stats.overdueCards > 0
+              ? "bg-[#FCECE9] text-[#B33B24]"
+              : "bg-[#E9F3EC] text-[#2B6E4E]"
+          }
+          valueClass={stats.overdueCards > 0 ? "text-[#B33B24]" : "text-[#162B22]"}
           hint={
             stats.overdueCards > 0
               ? `${stats.dueSoonCards} due soon`
@@ -334,52 +435,67 @@ function ReportsContent({ token }: { token: string }) {
         <StatTile
           label="Notifications"
           value={stats.unreadNotifications}
-          icon={<Bell size={18} strokeWidth={1.5} aria-hidden="true" />}
-          accent={stats.unreadNotifications > 0 ? "warning" : "default"}
+          icon={<Bell size={17} strokeWidth={1.75} aria-hidden="true" />}
+          iconBgClass="bg-[#F3F4F0] text-[#7C8680]"
           hint={`${stats.totalNotifications} total`}
         />
       </div>
 
-      {/* Second row: completion + priority + due soon */}
+      {/* 3. Second Row: Completion + High-priority open + Due in 24h */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)] p-4 shadow-[var(--shadow-card)]">
-          <h2 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">
-            <BarChart3 size={14} aria-hidden="true" className="mr-1.5 inline text-[var(--brand)]" />
-            Completion
+        <div className="rounded-2xl border border-[#E6E8E3] bg-white p-5">
+          <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-[#162B22]">
+            <BarChart3
+              size={14}
+              strokeWidth={1.75}
+              aria-hidden="true"
+              className="text-[#4E7A58]"
+            />
+            <span>Completion</span>
           </h2>
           {stats.completion !== null ? (
             <ProgressRing percent={stats.completion} label="Done" />
           ) : (
-            <p className="text-sm text-[var(--text-muted)]">
+            <p className="text-xs text-[#7C8680]">
               No cards yet — completion will appear once you have at least one.
             </p>
           )}
         </div>
 
-        <div className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)] p-4 shadow-[var(--shadow-card)]">
-          <h2 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">
-            <Flag size={14} aria-hidden="true" className="mr-1.5 inline text-[var(--brand)]" />
-            High-priority open
+        <div className="rounded-2xl border border-[#E6E8E3] bg-white p-5">
+          <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-[#162B22]">
+            <Flag
+              size={14}
+              strokeWidth={1.75}
+              aria-hidden="true"
+              className="text-[#6E7A73]"
+            />
+            <span>High-priority open</span>
           </h2>
-          <p className="text-2xl font-semibold text-[var(--text-primary)]">
+          <p className="text-2xl font-semibold text-[#162B22]">
             {stats.highPriorityCards}
           </p>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
+          <p className="mt-1.5 text-xs text-[#7C8680]">
             {stats.highPriorityCards === 0
               ? "No high-priority cards."
               : "Cards marked high priority that are still open."}
           </p>
         </div>
 
-        <div className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)] p-4 shadow-[var(--shadow-card)]">
-          <h2 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">
-            <Timer size={14} aria-hidden="true" className="mr-1.5 inline text-[var(--brand)]" />
-            Due in 24h
+        <div className="rounded-2xl border border-[#E6E8E3] bg-white p-5">
+          <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-[#162B22]">
+            <Timer
+              size={14}
+              strokeWidth={1.75}
+              aria-hidden="true"
+              className="text-[#6E7A73]"
+            />
+            <span>Due in 24h</span>
           </h2>
-          <p className="text-2xl font-semibold text-[var(--text-primary)]">
+          <p className="text-2xl font-semibold text-[#162B22]">
             {stats.dueSoonCards}
           </p>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
+          <p className="mt-1.5 text-xs text-[#7C8680]">
             {stats.dueSoonCards === 0
               ? "Nothing due in the next 24 hours."
               : "Open cards due within the next 24 hours."}
@@ -387,14 +503,16 @@ function ReportsContent({ token }: { token: string }) {
         </div>
       </div>
 
-      {/* Refresh */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-[var(--text-muted)]">
-          Snapshot updated {now.toLocaleString()}
-        </p>
-        <BaseButton variant="secondary" size="sm" onClick={load}>
-          <RefreshCw size={14} aria-hidden="true" /> Refresh
-        </BaseButton>
+      {/* 4. Snapshot Footer & Refresh */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <button
+          type="button"
+          onClick={load}
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[#E6E8E3] bg-white px-3.5 py-1.5 text-xs font-medium text-[#162B22] transition-colors hover:bg-[#FAFBF8]"
+        >
+          <RefreshCw size={13} strokeWidth={1.75} aria-hidden="true" />
+          <span>Refresh</span>
+        </button>
       </div>
     </div>
   );
@@ -404,41 +522,29 @@ function ReportsContent({ token }: { token: string }) {
  * Reports — at-a-glance dashboard of your workspace: boards, your cards
  * (open / done / overdue / due-soon / high-priority), notifications, and
  * completion rate.
- *
- * All data comes from existing backend endpoints: GET /api/boards,
- * GET /api/v1/cards?mine=true, GET /api/notifications.
  */
 export default function ReportsPage() {
   const { token, isAuthLoading } = useRequireAuth();
 
   return (
-    <BoardBgWrapper className="flex flex-1 flex-col">
-      <PageHeader
-        title="Reports"
-        description="Your workspace at a glance."
-        icon={<BarChart3 size={16} strokeWidth={1.5} />}
-      />
-      <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-5xl">
-          {isAuthLoading || !token ? (
-            <div
-              className="flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)] p-10"
-              aria-busy="true"
-              aria-label="Loading reports"
-            >
-              <Loader2
-                size={20}
-                strokeWidth={1.5}
-                aria-hidden="true"
-                className="animate-spin text-[var(--text-muted)]"
-              />
-              <p className="text-sm text-[var(--text-muted)]">Loading…</p>
-            </div>
-          ) : (
-            <ReportsContent token={token} />
-          )}
+    <div className="flex min-h-full w-full flex-1 flex-col px-4 py-5 sm:px-6 lg:px-8">
+      {isAuthLoading || !token ? (
+        <div
+          className="flex flex-col items-center gap-3 rounded-2xl border border-[#E6E8E3] bg-white p-10"
+          aria-busy="true"
+          aria-label="Loading reports"
+        >
+          <Loader2
+            size={20}
+            strokeWidth={1.5}
+            aria-hidden="true"
+            className="animate-spin text-[#6E7A73]"
+          />
+          <p className="text-sm text-[#6E7A73]">Loading…</p>
         </div>
-      </main>
-    </BoardBgWrapper>
+      ) : (
+        <ReportsContent token={token} />
+      )}
+    </div>
   );
 }

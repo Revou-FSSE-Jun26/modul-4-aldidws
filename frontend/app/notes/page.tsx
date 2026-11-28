@@ -1,11 +1,14 @@
 "use client";
 
 import {
+  Suspense,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type FormEvent,
 } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   StickyNote,
   Plus,
@@ -16,79 +19,27 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Pin,
+  FolderKanban,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { BaseButton } from "@/components/shared/BaseButton";
 import { BaseBadge } from "@/components/shared/BaseBadge";
 import { showSuccess, showError } from "@/lib/toast";
-import { BoardBgWrapper } from "@/components/board/BoardBgWrapper";
-import { PageHeader } from "@/components/shared/PageHeader";
-import type { FormEvent } from "react";
+import { readNotes, writeNotes, type Note } from "@/lib/notesStorage";
 
 // ---------------------------------------------------------------------------
-// Types & storage
+// Helpers
 // ---------------------------------------------------------------------------
-
-interface Note {
-  id: string;
-  title: string;
-  body: string;
-  pinned: boolean;
-  createdAt: string; // ISO
-  updatedAt: string; // ISO
-}
-
-const STORAGE_PREFIX = "kanban-notes:v1:";
-
-function storageKey(userId: string): string {
-  return STORAGE_PREFIX + userId;
-}
-
-function readNotes(userId: string): Note[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(storageKey(userId));
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    // Minimal shape validation.
-    return parsed.filter(
-      (n): n is Note =>
-        n !== null &&
-        typeof n === "object" &&
-        "id" in n &&
-        "title" in n &&
-        "body" in n &&
-        "pinned" in n,
-    ) as Note[];
-  } catch {
-    return [];
-  }
-}
-
-function writeNotes(userId: string, notes: Note[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(storageKey(userId), JSON.stringify(notes));
-  } catch (err) {
-    // Most likely QuotaExceededError.
-    showError("Could not save notes to this browser. Storage may be full.");
-    throw err;
-  }
-}
 
 function uid(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
-  // Fallback for older browsers.
   return `n_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function relativeTime(iso: string, now: Date): string {
   const t = new Date(iso).getTime();
@@ -128,18 +79,17 @@ function NoteEditor({
   const [title, setTitle] = useState(note?.title ?? "");
   const [body, setBody] = useState(note?.body ?? "");
   const [showDelete, setShowDelete] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Reset form fields when the opened note changes.
   useEffect(() => {
     setTitle(note?.title ?? "");
     setBody(note?.body ?? "");
     setShowDelete(false);
   }, [note]);
 
-  // Focus the form when it opens (called from the parent's effect).
   useEffect(() => {
-    formRef.current?.focus();
-  }, [formRef]);
+    titleInputRef.current?.focus();
+  }, [note]);
 
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -149,30 +99,49 @@ function NoteEditor({
 
   return (
     <form
+      ref={formRef}
       onSubmit={submit}
-      className="flex flex-col gap-4 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)] p-4 shadow-[var(--shadow-card)]"
+      className="flex flex-col gap-4 rounded-2xl border border-[#E6E8E3] bg-white p-6"
     >
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-          {isEdit ? "Edit note" : "New note"}
-        </h2>
-        {isEdit && (
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-baseline gap-2.5">
+          <h2 className="text-base font-semibold text-[#162B22]">
+            {isEdit ? "Edit note" : "New note"}
+          </h2>
+          <span className="text-xs text-[#7C8680]">
+            {isEdit
+              ? "Refine your note title or content."
+              : "Give a thought a place to grow."}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {isEdit && (
+            <button
+              type="button"
+              onClick={() => setShowDelete((v) => !v)}
+              aria-expanded={showDelete}
+              className="inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[#6E7A73] transition-colors hover:bg-[#F3F4F0] hover:text-[#B33B24]"
+            >
+              <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
+              {showDelete ? "Cancel delete" : "Delete"}
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => setShowDelete((v) => !v)}
-            aria-expanded={showDelete}
-            className="inline-flex items-center gap-1 rounded-[var(--radius-ctrl)] px-2 py-1 text-xs font-medium text-[var(--text-muted)] transition-colors duration-150 hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)]"
+            onClick={onCancel}
+            aria-label="Close note editor"
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-[#7C8680] transition-colors hover:bg-[#F3F4F0] hover:text-[#162B22]"
           >
-            <Trash2 size={12} aria-hidden="true" />
-            {showDelete ? "Cancel delete" : "Delete"}
+            <X size={15} strokeWidth={1.75} aria-hidden="true" />
           </button>
-        )}
+        </div>
       </div>
 
       {showDelete && isEdit && (
         <div
           role="alert"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-ctrl)] border border-[var(--border)] bg-[var(--bg-hover)] p-2 text-xs text-[var(--text-secondary)]"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#E6E8E3] bg-[#FAFBF8] px-3.5 py-2.5 text-xs text-[#3F5347]"
         >
           <span>Delete this note permanently?</span>
           <div className="flex gap-2">
@@ -196,34 +165,49 @@ function NoteEditor({
         </div>
       )}
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3">
         <input
+          ref={titleInputRef}
           type="text"
           value={title}
           maxLength={120}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Title"
           aria-label="Note title"
-          autoFocus
-          className="rounded-[var(--radius-ctrl)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)]"
+          className="h-10 w-full rounded-lg border border-[#16382C] bg-white px-3.5 text-sm text-[#162B22] placeholder:text-[#92968D] focus:outline-none"
         />
+
         <textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          rows={6}
-          placeholder="Write your note…"
+          rows={4}
+          placeholder="Write your note..."
           aria-label="Note body"
-          className="min-h-[120px] resize-y rounded-[var(--radius-ctrl)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)]"
+          className="min-h-[108px] w-full resize-y rounded-lg border border-[#DCDFD8] bg-white px-3.5 py-2.5 text-sm text-[#162B22] placeholder:text-[#92968D] focus:border-[#16382C] focus:outline-none"
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <BaseButton type="submit" disabled={!title.trim()}>
+      <div className="flex flex-wrap items-center gap-3 pt-1">
+        <BaseButton
+          type="submit"
+          size="sm"
+          disabled={!title.trim()}
+          className="cursor-pointer"
+        >
           {isEdit ? "Save changes" : "Create note"}
         </BaseButton>
-        <BaseButton variant="secondary" type="button" onClick={onCancel}>
+        <BaseButton
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={onCancel}
+          className="cursor-pointer"
+        >
           Cancel
         </BaseButton>
+        <span className="text-xs text-[#8C9590]">
+          Start with a title and a few words.
+        </span>
       </div>
     </form>
   );
@@ -251,69 +235,75 @@ function NoteCard({
   return (
     <article
       className={[
-        "group relative flex flex-col gap-3 rounded-[var(--radius-card)] border bg-[var(--bg-panel)] p-4 shadow-[var(--shadow-card)] transition-shadow duration-150",
-        note.pinned ? "border-[var(--brand)] border-l-2" : "border-[var(--border)]",
+        "flex flex-col gap-2.5 rounded-2xl border bg-white p-5 transition-colors",
+        note.pinned
+          ? "border-[#B9CCA4] border-l-4 border-l-[#4E7A58]"
+          : "border-[#E6E8E3] border-l-4 border-l-[#DCE5CC] hover:border-[#CFD6C6]",
       ].join(" ")}
     >
-      <header className="flex items-start justify-between gap-3">
+      <header className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-sm font-semibold text-[var(--text-primary)]">
+            <h3 className="truncate text-sm font-semibold text-[#162B22]">
               {note.title}
             </h3>
             {note.pinned && (
-              <BaseBadge variant="primary">Pinned</BaseBadge>
+              <BaseBadge className="border-transparent bg-[#DCE5CC] text-[#1D4E38]">
+                Pinned
+              </BaseBadge>
             )}
           </div>
-          <p className="mt-1 flex items-center gap-1 text-xs text-[var(--text-muted)]">
-            <Clock size={12} aria-hidden="true" />
-            Updated {relativeTime(note.updatedAt, now)}
+          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#7C8680]">
+            <Clock size={11} strokeWidth={1.75} aria-hidden="true" />
+            <span>Updated {relativeTime(note.updatedAt, now)}</span>
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5">
           <button
             type="button"
             onClick={() => onTogglePin(note.id)}
             aria-label={note.pinned ? "Unpin note" : "Pin note"}
             aria-pressed={note.pinned}
-            className="rounded-[var(--radius-ctrl)] p-1.5 text-[var(--text-muted)] transition-colors duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--brand)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)]"
+            className={[
+              "flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg transition-colors",
+              note.pinned
+                ? "bg-[#DCE5CC]/70 text-[#16382C]"
+                : "text-[#8C9590] hover:bg-[#F3F4F0] hover:text-[#162B22]",
+            ].join(" ")}
           >
-            <ChevronDown
-              size={14}
-              strokeWidth={1.5}
-              aria-hidden="true"
-              className={note.pinned ? "rotate-180" : ""}
-            />
+            <Pin size={13} strokeWidth={1.75} aria-hidden="true" />
           </button>
+
           <button
             type="button"
             onClick={() => onEdit(note)}
             aria-label="Edit note"
-            className="rounded-[var(--radius-ctrl)] p-1.5 text-[var(--text-muted)] transition-colors duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)]"
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-[#8C9590] transition-colors hover:bg-[#F3F4F0] hover:text-[#162B22]"
           >
-            <Pencil size={14} strokeWidth={1.5} aria-hidden="true" />
+            <Pencil size={13} strokeWidth={1.75} aria-hidden="true" />
           </button>
+
           <button
             type="button"
             onClick={() => setShowDelete((v) => !v)}
             aria-label={showDelete ? "Cancel delete" : "Delete note"}
             aria-expanded={showDelete}
-            className="rounded-[var(--radius-ctrl)] p-1.5 text-[var(--text-muted)] transition-colors duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--accent-red)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)]"
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-[#8C9590] transition-colors hover:bg-[#F3F4F0] hover:text-[#B33B24]"
           >
-            <Trash2 size={14} strokeWidth={1.5} aria-hidden="true" />
+            <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
           </button>
         </div>
       </header>
 
       <div
         className={[
-          "whitespace-pre-wrap break-words text-sm text-[var(--text-secondary)]",
+          "mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-[#4E6356]",
           !expanded && "line-clamp-3",
         ].join(" ")}
       >
         {note.body.trim() === "" ? (
-          <span className="italic text-[var(--text-muted)]">No content</span>
+          <span className="italic text-[#8C9590]">No content</span>
         ) : (
           note.body
         )}
@@ -323,15 +313,15 @@ function NoteCard({
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="inline-flex items-center gap-1 self-start rounded-[var(--radius-ctrl)] px-2 py-1 text-xs font-medium text-[var(--brand)] transition-colors duration-150 hover:bg-[var(--brand-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)]"
+          className="inline-flex w-fit cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[#16382C] transition-colors hover:bg-[#EBF0E2]"
         >
           {expanded ? (
             <>
-              <ChevronUp size={12} aria-hidden="true" /> Show less
+              <ChevronUp size={13} aria-hidden="true" /> Show less
             </>
           ) : (
             <>
-              <ChevronDown size={12} aria-hidden="true" /> Show more
+              <ChevronDown size={13} aria-hidden="true" /> Show more
             </>
           )}
         </button>
@@ -340,7 +330,7 @@ function NoteCard({
       {showDelete && (
         <div
           role="alert"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-ctrl)] border border-[var(--border)] bg-[var(--bg-hover)] p-2 text-xs text-[var(--text-secondary)]"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#E6E8E3] bg-[#FAFBF8] px-3 py-2 text-xs text-[#3F5347]"
           onClick={closeDelete}
         >
           <span>Delete this note permanently?</span>
@@ -372,7 +362,13 @@ function NoteCard({
 // Main page component
 // ---------------------------------------------------------------------------
 
-function NotesContent({ userId }: { userId: string }) {
+function NotesContent({
+  userId,
+  workspaceLabel,
+}: {
+  userId: string;
+  workspaceLabel: string;
+}) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [editing, setEditing] = useState<Note | null>(null);
@@ -382,22 +378,50 @@ function NotesContent({ userId }: { userId: string }) {
 
   const editorRef = useRef<HTMLFormElement | null>(null);
 
-  // Load notes from localStorage once mounted for this user.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const noteParam = searchParams.get("note");
+  const handledNoteRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!noteParam) {
+      handledNoteRef.current = null;
+      return;
+    }
+    if (!hydrated || handledNoteRef.current === noteParam) return;
+    handledNoteRef.current = noteParam;
+
+    const target = notes.find((n) => n.id === noteParam);
+    if (target) {
+      setCreating(false);
+      setSearch("");
+      setShowPinnedOnly(false);
+      setEditing(target);
+    } else {
+      showError("That note could not be found.");
+    }
+    router.replace(pathname, { scroll: false });
+  }, [noteParam, hydrated, notes, router, pathname]);
+
   useEffect(() => {
     setNotes(readNotes(userId));
     setHydrated(true);
   }, [userId]);
 
-  // Focus the editor when it opens.
   useEffect(() => {
     if (creating || editing) {
-      editorRef.current?.focus();
+      editorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, [creating, editing]);
 
   function commit(next: Note[]) {
-    setNotes(next);
-    writeNotes(userId, next);
+    try {
+      writeNotes(userId, next);
+      setNotes(next);
+    } catch {
+      // Error toast is already handled inside writeNotes
+    }
   }
 
   function handleSave(title: string, body: string) {
@@ -448,78 +472,84 @@ function NotesContent({ userId }: { userId: string }) {
           n.body.toLowerCase().includes(q),
       );
     }
-    // Pinned first, then most recently updated.
     return [...list].sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
   }, [notes, search, showPinnedOnly]);
 
-  const pinnedCount = notes.filter((n) => n.pinned).length;
+  const isEditorOpen = creating || editing !== null;
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* Toolbar */}
+    <div className="flex w-full flex-1 flex-col gap-5">
+      {/* 1. Hero Banner (Sage Green Card) */}
+      <section
+        aria-label="Notes summary"
+        className="flex flex-col justify-between gap-4 rounded-2xl bg-[#DCE5CC] px-7 py-6 sm:flex-row sm:items-center"
+      >
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4E6356]">
+            YOUR SPACE
+          </p>
+          <h1 className="mt-1 truncate font-serif text-3xl italic tracking-tight text-[#162B22] sm:text-[34px] sm:leading-tight">
+            Your notes
+          </h1>
+          <p className="mt-1.5 text-[13px] text-[#3F5347]">
+            Big ideas, small thoughts. A space to keep them all.
+          </p>
+        </div>
+
+        <div className="inline-flex w-fit shrink-0 items-center gap-2 rounded-full bg-white/95 px-3.5 py-2 text-xs font-medium text-[#162B22] shadow-2xs">
+          <FolderKanban size={14} strokeWidth={1.75} aria-hidden="true" />
+          <span>{workspaceLabel}</span>
+        </div>
+      </section>
+
+      {/* 2. Toolbar Row: Search + Pinned only + New note */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative min-w-0 flex-1">
+        <label className="flex h-10 min-w-[220px] flex-1 items-center gap-2.5 rounded-xl border border-[#E6E8E3] bg-white px-3.5 transition-colors focus-within:border-[#16382C]">
           <Search
             size={14}
-            strokeWidth={1.5}
+            strokeWidth={1.75}
+            className="shrink-0 text-[#7C8680]"
             aria-hidden="true"
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
           />
           <input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search notes…"
+            placeholder="Search notes..."
             aria-label="Search notes"
-            className="w-full rounded-[var(--radius-ctrl)] border border-[var(--border)] bg-[var(--bg-input)] py-2 pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)]"
+            className="w-full min-w-0 bg-transparent text-xs text-[#162B22] outline-none placeholder:text-[#92968D]"
           />
-        </div>
+        </label>
+
+        <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-[#E6E8E3] bg-white px-3.5 text-xs font-medium text-[#3F5347] transition-colors hover:bg-[#FAFBF8]">
+          <input
+            type="checkbox"
+            checked={showPinnedOnly}
+            onChange={(e) => setShowPinnedOnly(e.target.checked)}
+            className="h-3.5 w-3.5 cursor-pointer rounded border-[#CFD3CA] accent-[#16382C]"
+          />
+          <span>Pinned only</span>
+        </label>
 
         <button
           type="button"
-          role="switch"
-          aria-checked={showPinnedOnly}
-          onClick={() => setShowPinnedOnly((v) => !v)}
-          className={[
-            "inline-flex items-center gap-2 rounded-[var(--radius-ctrl)] border px-3 py-1.5 text-xs font-medium transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)]",
-            showPinnedOnly
-              ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]"
-              : "border-[var(--border)] bg-[var(--bg-panel)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
-          ].join(" ")}
+          disabled={isEditorOpen}
+          onClick={() => {
+            setCreating(true);
+            setEditing(null);
+          }}
+          className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-xl border border-[#E6E8E3] bg-white px-4 text-xs font-medium text-[#162B22] transition-colors hover:bg-[#FAFBF8] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <ChevronDown
-            size={12}
-            strokeWidth={1.5}
-            aria-hidden="true"
-            className={showPinnedOnly ? "rotate-180" : ""}
-          />
-          Pinned only
-          {pinnedCount > 0 && (
-            <span className="rounded-full bg-[var(--brand)] px-1.5 py-0.5 text-[10px] font-semibold text-white">
-              {pinnedCount}
-            </span>
-          )}
+          <Plus size={14} strokeWidth={1.75} aria-hidden="true" />
+          <span>New note</span>
         </button>
-
-        <div className="flex gap-2">
-          <BaseButton
-            variant="secondary"
-            onClick={() => {
-              setCreating(true);
-              setEditing(null);
-            }}
-            disabled={creating || !!editing}
-          >
-            <Plus size={14} aria-hidden="true" /> New note
-          </BaseButton>
-        </div>
       </div>
 
-      {/* Editor (only shown when creating or editing) */}
-      {(creating || editing) && (
+      {/* 3. Inline Editor */}
+      {isEditorOpen && (
         <NoteEditor
           note={editing}
           onSave={handleSave}
@@ -532,43 +562,73 @@ function NotesContent({ userId }: { userId: string }) {
         />
       )}
 
-      {/* List */}
-      {filtered.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-dashed border-[var(--border)] bg-[var(--bg-panel)]/60 px-6 py-14 text-center">
-          <StickyNote
-            size={36}
-            strokeWidth={1.25}
-            aria-hidden="true"
-            className="text-[var(--text-muted)]"
-          />
-          <p className="text-sm text-[var(--text-secondary)]">
-            {notes.length === 0
-              ? "No notes yet. Create your first one to get started."
-              : search
-                ? "No notes match your search."
-                : showPinnedOnly
-                  ? "No pinned notes."
-                  : "No notes."}
+      {/* 4. All Notes Section */}
+      <section aria-label="All notes" className="flex flex-col gap-3.5 pt-1">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-[#162B22]">All notes</h2>
+            <span className="rounded-md bg-[#EAECE6] px-1.5 py-0.5 text-[11px] font-semibold text-[#4E6356]">
+              {filtered.length}
+            </span>
+          </div>
+          <p className="mt-0.5 text-xs text-[#7C8680]">
+            A little order for your everyday ideas.
           </p>
-          {notes.length === 0 && (
-            <BaseButton onClick={() => setCreating(true)}>
-              <Plus size={14} aria-hidden="true" /> Create a note
-            </BaseButton>
-          )}
         </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label={`${filtered.length} notes`}>
-          {filtered.map((n) => (
-            <NoteCard
-              key={n.id}
-              note={n}
-              onEdit={setEditing}
-              onDelete={handleDelete}
-              onTogglePin={handleTogglePin}
+
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-[#CFD3CA] bg-white px-6 py-12 text-center">
+            <StickyNote
+              size={32}
+              strokeWidth={1.4}
+              aria-hidden="true"
+              className="text-[#6E7A73]"
             />
-          ))}
-        </div>
-      )}
+            <p className="text-sm font-medium text-[#162B22]">
+              {notes.length === 0
+                ? "No notes yet"
+                : search
+                  ? "No notes match your search"
+                  : "No pinned notes yet"}
+            </p>
+            <p className="max-w-sm text-xs text-[#6E7A73]">
+              {notes.length === 0
+                ? "Create your first note to keep quick ideas and reminders handy."
+                : search
+                  ? "Try a different keyword or clear the search box."
+                  : "Pin important notes so they stay right at the top."}
+            </p>
+            {notes.length === 0 && !isEditorOpen && (
+              <BaseButton
+                type="button"
+                size="sm"
+                onClick={() => setCreating(true)}
+                className="mt-1 cursor-pointer"
+              >
+                <Plus size={14} aria-hidden="true" /> Create a note
+              </BaseButton>
+            )}
+          </div>
+        ) : (
+          <div
+            className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+            aria-label={`${filtered.length} notes`}
+          >
+            {filtered.map((n) => (
+              <NoteCard
+                key={n.id}
+                note={n}
+                onEdit={(target) => {
+                  setCreating(false);
+                  setEditing(target);
+                }}
+                onDelete={handleDelete}
+                onTogglePin={handleTogglePin}
+              />
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -580,42 +640,39 @@ function NotesContent({ userId }: { userId: string }) {
 /**
  * Notes — personal scratchpad. Notes are stored in localStorage keyed per
  * user id (so each account sees only its own notes). Create, edit, pin,
- * delete, search. This is intentionally a local feature: no backend.
+ * delete, search.
  */
 export default function NotesPage() {
-  const { token, isAuthLoading } = useRequireAuth();
+  const { token, isAuthLoading, user } = useRequireAuth();
   const { currentUser } = useAuth();
 
-  const userId = currentUser?.id ?? "";
+  const activeUser = currentUser ?? user;
+  const userId = activeUser?.id ?? "";
+  const workspaceLabel =
+    activeUser?.name?.trim() ||
+    activeUser?.email?.split("@")[0] ||
+    "Personal";
 
   return (
-    <BoardBgWrapper className="flex flex-1 flex-col">
-      <PageHeader
-        title="Notes"
-        description="Personal scratchpad, saved to this browser."
-        icon={<StickyNote size={16} strokeWidth={1.5} />}
-      />
-      <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-5xl">
-          {isAuthLoading || !token || !currentUser ? (
-            <div
-              className="flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-panel)] p-10"
-              aria-busy="true"
-              aria-label="Loading notes"
-            >
-              <Loader2
-                size={20}
-                strokeWidth={1.5}
-                aria-hidden="true"
-                className="animate-spin text-[var(--text-muted)]"
-              />
-              <p className="text-sm text-[var(--text-muted)]">Loading…</p>
-            </div>
-          ) : (
-            <NotesContent userId={userId} />
-          )}
+    <div className="flex min-h-full w-full flex-1 flex-col px-4 py-5 sm:px-6 lg:px-8">
+      {isAuthLoading || !token || !userId ? (
+        <div
+          className="flex flex-col gap-5"
+          aria-busy="true"
+          aria-label="Loading notes"
+        >
+          <div className="h-32 animate-pulse rounded-2xl bg-[#DCE5CC]/70" />
+          <div className="h-10 animate-pulse rounded-xl border border-[#E6E8E3] bg-white" />
+          <div className="h-44 animate-pulse rounded-2xl border border-[#E6E8E3] bg-white" />
         </div>
-      </main>
-    </BoardBgWrapper>
+      ) : (
+        <Suspense fallback={null}>
+          <NotesContent
+            userId={userId}
+            workspaceLabel={`${workspaceLabel}'s workspace`}
+          />
+        </Suspense>
+      )}
+    </div>
   );
 }

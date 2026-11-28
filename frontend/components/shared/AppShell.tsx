@@ -1,33 +1,63 @@
 "use client";
 
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/shared/Sidebar";
+import { MobileBottomNav } from "@/components/shared/MobileBottomNav";
 
-/** Paths where sidebar, rail, and header should be hidden. */
 const AUTH_PATHS = ["/login", "/register"];
+const PAGE_BACKGROUND = "#faf9f6";
 
-/**
- * AppShell — renders the icon rail and Sidebar only on non-auth pages.
- * Wraps children in the data-layout flex container.
- */
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const isAuth = AUTH_PATHS.includes(pathname);
 
+  const [collapsed, setCollapsed] = useState(false);
+
   if (isAuth) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-[var(--bg-page)]">
+      <div className="flex min-h-dvh w-full items-center justify-center bg-[var(--bg-page)]">
         {children}
       </div>
     );
   }
 
   return (
-    <div data-layout className="flex h-full">
-      <Sidebar />
-      <main className="flex-1 overflow-hidden">
-        {children}
+    <div
+      data-layout
+      className="relative flex h-dvh w-full overflow-hidden"
+      style={{ backgroundColor: PAGE_BACKGROUND }}
+    >
+      {/* Sidebar hanya tampil di layar desktop (>= md) */}
+      <Sidebar
+        collapsed={collapsed}
+        onToggle={() => {
+          setCollapsed((previous) => !previous);
+        }}
+      />
+
+      {/* Area Konten Utama */}
+      <main
+        className={[
+          "min-h-0 flex-1 overflow-y-auto pb-[calc(4.75rem+env(safe-area-inset-bottom))] transition-[margin] duration-200 ease-in-out md:pb-0",
+          collapsed ? "md:ml-16" : "md:ml-[180px]",
+        ].join(" ")}
+        style={{ backgroundColor: PAGE_BACKGROUND }}
+      >
+        <div
+          className="min-h-full w-full"
+          style={{ backgroundColor: PAGE_BACKGROUND }}
+        >
+          {children}
+        </div>
       </main>
+
+      {/* Bottom Navigation hanya tampil di layar mobile (< md) */}
+      <MobileBottomNav />
     </div>
   );
 }
