@@ -33,6 +33,8 @@ async function openBoard(
   const login = new LoginPage(page);
   await login.goto("/login?next=" + encodeURIComponent(`/boards/${boardId}${query}`));
   await login.signIn(account.email, account.password);
+  // Wait for the board column list specifically (aria-label ends with "column" or "columns").
+  await expect(page.getByRole("list", { name: /column/ })).toBeVisible();
   return { login, board: new BoardPage(page), filter: new FilterBar(page) };
 }
 
