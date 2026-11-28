@@ -86,10 +86,10 @@ Status: backend Done. UI: register and login pages Done. Header, logout button a
 - **R1.6** IF the email is unknown or the password is wrong, THEN THE backend SHALL return 401 `INVALID_CREDENTIALS` with the same message for both cases. `[Done]`
 - **R1.7** IF a login password does not satisfy the registration password policy, THEN THE backend SHALL still return 401 `INVALID_CREDENTIALS`, not 400. `[Plan]` Current: `LoginSchema` applies the policy and returns 400. Matters only for accounts created before the policy.
 - **R1.8** WHEN a request to any route other than register, login and health has no valid Bearer token, THE backend SHALL return 401 `UNAUTHORIZED`. `[Done]`
-- **R1.9** WHEN an unauthenticated visitor opens any page except `/login` and `/register`, THE frontend SHALL redirect to `/login`. `[Plan]` Current: `/` and `/boards/[id]` redirect through `useRequireAuth`. `/profile` and `/my-tasks` read `useAuth` without redirecting.
+- **R1.9** WHEN an unauthenticated visitor opens any page except `/login` and `/register`, THE frontend SHALL redirect to `/login`. `[Done]` (useRequireAuth)
 - **R1.10** WHEN a login succeeds, THE frontend SHALL navigate to `/`. `[Done]`
-- **R1.11** WHILE a user is authenticated, THE frontend SHALL show a header on every authenticated page with links to Boards (`/`) and Profile (`/profile`) and a Log out button. `[Plan]`
-- **R1.12** WHEN the user chooses Log out, THE frontend SHALL clear the in-memory token and user and navigate to `/login`. `[Plan]` Current: `AuthContext.logout()` clears state, but no button calls it. Limitation: the server does not invalidate the access token, so it stays valid until it expires (15 minutes). See R9.
+- **R1.11** WHILE a user is authenticated, THE frontend SHALL show a header on every authenticated page with links to Boards (`/`) and Profile (`/profile`) and a Log out button. `[Done]` (Sidebar + AppShell)
+- **R1.12** WHEN the user chooses Log out, THE frontend SHALL clear the in-memory token and user and navigate to `/login`. `[Done]` (sidebar sign-out) Limitation: the server does not invalidate the access token, so it stays valid until it expires (15 minutes). See R9.
 - **R1.13** THE backend SHALL store only a password hash. `[Done]` (Werkzeug `generate_password_hash`; the algorithm does not match `security.md` section 3.2, see N1.8)
 
 ### Requirement 2: Boards
@@ -100,15 +100,15 @@ Status: backend Done except R2.5. UI: list Done. Create, open with contents, ren
 
 #### Acceptance criteria
 
-- **R2.1** WHEN a Member submits `name` (1 to 100 characters after trimming, not blank), THE backend SHALL create a board owned by the caller and return 201 with `id`, `name`, `user_id`, `created_at`, `updated_at`. `[BE]` (`POST /api/boards`)
-- **R2.2** IF the caller already owns a board with the same name (case-insensitive), THEN THE backend SHALL return 409 `RESOURCE_CONFLICT`. Different users MAY use the same name. `[BE]` Enforced in the service only. There is no database unique index (see R12.5).
-- **R2.3** WHEN a Member opens `/`, THE frontend SHALL list only the Member's boards, oldest first, with loading, empty and error states, and a "Create board" control. `[BE]` Current: list, loading, empty and error states work. The empty state says "Create one to get started" but there is no control.
-- **R2.4** WHEN a Member submits the Create board form, THE frontend SHALL call `POST /api/boards {name}`, show the new board in the list, and on 409 show "A board with that name already exists." while keeping the typed name. `[Plan]`
-- **R2.5** WHEN a Member requests `GET /api/boards/{id}` for an owned board, THE backend SHALL return the board and its columns ordered by `position`, each column with its cards ordered by `order` ascending, excluding soft-deleted cards, in one response. `[Plan]` Assumption pending confirmation: D2. Current: the response contains only the board fields.
-- **R2.6** WHEN a Member opens `/boards/{id}`, THE frontend SHALL render the columns and cards from that single response and SHALL show an error, not an empty board, if the request fails. `[Plan]` Current: the page calls two endpoints that do not exist (`GET /api/boards/{id}/columns` returns 405, `GET /api/v1/cards?column_id=` returns 404) and maps both to an empty board.
+- **R2.1** WHEN a Member submits `name` (1 to 100 characters after trimming, not blank), THE backend SHALL create a board owned by the caller and return 201 with `id`, `name`, `user_id`, `created_at`, `updated_at`. `[Done]` (`POST /api/boards`)
+- **R2.2** IF the caller already owns a board with the same name (case-insensitive), THEN THE backend SHALL return 409 `RESOURCE_CONFLICT`. Different users MAY use the same name. `[Done]` Enforced in the service only. There is no database unique index (see R12.5).
+- **R2.3** WHEN a Member opens `/`, THE frontend SHALL list only the Member's boards, oldest first, with loading, empty and error states, and a "Create board" control. `[Done]` (CreateBoardForm, board list)
+- **R2.4** WHEN a Member submits the Create board form, THE frontend SHALL call `POST /api/boards {name}`, show the new board in the list, and on 409 show "A board with that name already exists." while keeping the typed name. `[Done]`
+- **R2.5** WHEN a Member requests `GET /api/boards/{id}` for an owned board, THE backend SHALL return the board and its columns ordered by `position`, each column with its cards ordered by `order` ascending, excluding soft-deleted cards, in one response. `[Done]` (B1 implemented)
+- **R2.6** WHEN a Member opens `/boards/{id}`, THE frontend SHALL render the columns and cards from that single response and SHALL show an error, not an empty board, if the request fails. `[Done]` (F4 implemented)
 - **R2.7** IF the board does not exist or is owned by someone else, THEN THE backend SHALL return 404 `BOARD_NOT_FOUND` and SHALL NOT reveal which case applies. `[Done]`
-- **R2.8** WHEN a Member submits a new `name` to `PATCH /api/boards/{id}`, THE backend SHALL apply the same rules as R2.1 and R2.2 and return 200 with the board. A change of letter case only SHALL NOT count as a conflict with the same board. `[BE]`
-- **R2.9** THE frontend SHALL let a Member rename a board from the board page. `[Plan]`
+- **R2.8** WHEN a Member submits a new `name` to `PATCH /api/boards/{id}`, THE backend SHALL apply the same rules as R2.1 and R2.2 and return 200 with the board. A change of letter case only SHALL NOT count as a conflict with the same board. `[Done]` (UI in BoardDetailView)
+- **R2.9** THE frontend SHALL let a Member rename a board from the board page. `[Done]`
 - **R2.10** WHEN a Member confirms deletion, THE backend SHALL delete the board and its columns, cards and comments so that none of them can be read afterwards, and return 204. `[BE]` Assumption pending confirmation: D1. Current: `DELETE /api/boards/{id}` removes the row and the database cascades (`ON DELETE CASCADE` on `board_columns.board_id`, `cards.column_id`, `card_comments.card_id`). This is a hard delete. The default in D1 asks for soft delete, which needs `deleted_at` on boards and columns and a migration. See task B4.
 - **R2.11** WHEN a Member chooses Delete board, THE frontend SHALL ask for confirmation naming the board and the number of cards that will be removed, and SHALL leave the board unchanged on cancel. `[Plan]`
 
@@ -120,13 +120,13 @@ Status: backend Done except R3.5. UI Planned.
 
 #### Acceptance criteria
 
-- **R3.1** WHEN a Member submits `name` (1 to 100 characters after trimming, not blank) to `POST /api/boards/{board_id}/columns`, THE backend SHALL create the column at the end of the board (`max(position) + 1`, or 0 if none) unless `position` (integer, 0 or more) is given, and return 201 with `id`, `board_id`, `name`, `position`, `created_at`, `updated_at`. `[BE]`
-- **R3.2** AFTER every create, delete and reorder, THE backend SHALL renumber the board's column positions to 0, 1, 2, ... in order. `[BE]`
-- **R3.3** WHEN a Member sends `PATCH /api/columns/{id}` with `name` and/or `position`, THE backend SHALL validate as in R3.1 and return 200 with the column. `[BE]`
-- **R3.4** WHEN a Member sends `PATCH /api/boards/{board_id}/columns/reorder` with `ordered_ids` (a non-empty list of UUIDs), THE backend SHALL set each column's position to its index in the list and return 200 with all columns of the board ordered by position. IF an id is not a column of that board, THEN THE backend SHALL return 404 `COLUMN_NOT_FOUND` and change nothing. `[BE]` The backend accepts a partial list. The frontend SHALL always send the complete list.
-- **R3.5** IF a column still contains cards that are not soft-deleted, THEN `DELETE /api/columns/{id}` SHALL return 409 `RESOURCE_CONFLICT` and change nothing. IF it contains no such cards, THEN THE backend SHALL delete it, renumber the remaining positions and return 204. `[Plan]` Assumption pending confirmation: D3. Current: the column is deleted and its cards are removed by the database cascade, with no check.
-- **R3.6** THE frontend SHALL provide, on the board page: an "Add column" control, rename and delete controls on each column header, and move-left and move-right controls that call the reorder endpoint. `[Plan]` Current: `ColumnHeader` has optional `onRename` and `onColumnDelete` props that `BoardDetailView` does not pass, and nothing creates or reorders columns.
-- **R3.7** WHEN a column delete is rejected with 409, THE frontend SHALL show "Move or delete this column's cards first." and keep the column. `[Plan]` Assumption pending confirmation: D3.
+- **R3.1** WHEN a Member submits `name` (1 to 100 characters after trimming, not blank) to `POST /api/boards/{board_id}/columns`, THE backend SHALL create the column at the end of the board (`max(position) + 1`, or 0 if none) unless `position` (integer, 0 or more) is given, and return 201 with `id`, `board_id`, `name`, `position`, `created_at`, `updated_at`. `[Done]`
+- **R3.2** AFTER every create, delete and reorder, THE backend SHALL renumber the board's column positions to 0, 1, 2, ... in order. `[Done]`
+- **R3.3** WHEN a Member sends `PATCH /api/columns/{id}` with `name` and/or `position`, THE backend SHALL validate as in R3.1 and return 200 with the column. `[Done]`
+- **R3.4** WHEN a Member sends `PATCH /api/boards/{board_id}/columns/reorder` with `ordered_ids` (a non-empty list of UUIDs), THE backend SHALL set each column's position to its index in the list and return 200 with all columns of the board ordered by position. IF an id is not a column of that board, THEN THE backend SHALL return 404 `COLUMN_NOT_FOUND` and change nothing. `[Done]` The backend accepts a partial list. The frontend SHALL always send the complete list.
+- **R3.5** IF a column still contains cards that are not soft-deleted, THEN `DELETE /api/columns/{id}` SHALL return 409 `RESOURCE_CONFLICT` and change nothing. IF it contains no such cards, THEN THE backend SHALL delete it, renumber the remaining positions and return 204. `[Done]` (B2 implemented)
+- **R3.6** THE frontend SHALL provide, on the board page: an "Add column" control, rename and delete controls on each column header, and move-left and move-right controls that call the reorder endpoint. `[Done]` (ColumnHeader with all controls)
+- **R3.7** WHEN a column delete is rejected with 409, THE frontend SHALL show "Move or delete this column's cards first." and keep the column. `[Done]`
 - **R3.8** THE backend SHALL return 404 `COLUMN_NOT_FOUND` (column routes) or `BOARD_NOT_FOUND` (board routes) when the caller does not own the board. `[Done]`
 
 Column names are not unique within a board. This is current behaviour and is not changed.
@@ -139,13 +139,13 @@ Status: backend Done except R4.5. UI Planned.
 
 #### Acceptance criteria
 
-- **R4.1** WHEN a Member submits `title` (1 to 255 characters after trimming, not blank) and optional `description` (up to 2000 characters, default empty) to `POST /api/v1/columns/{column_id}/cards`, THE backend SHALL create the card at the end of the column (`max(order) + 1.0`, or 0.0 if none), set `owner_id` to the caller and return 201 with `id`, `column_id`, `owner_id`, `title`, `description`, `order`, `priority`, `due_date`, `labels[]`, `assignee_ids[]`, `can_move`, `deleted_at`, `created_at`, `updated_at`. `[BE]`
+- **R4.1** WHEN a Member submits `title` (1 to 255 characters after trimming, not blank) and optional `description` (up to 2000 characters, default empty) to `POST /api/v1/columns/{column_id}/cards`, THE backend SHALL create the card at the end of the column (`max(order) + 1.0`, or 0.0 if none), set `owner_id` to the caller and return 201 with `id`, `column_id`, `owner_id`, `title`, `description`, `order`, `priority`, `due_date`, `labels[]`, `assignee_ids[]`, `can_move`, `deleted_at`, `created_at`, `updated_at`. `[Done]`
 - **R4.2** IF the title is blank or longer than 255 characters, or the description is longer than 2000 characters, THEN THE backend SHALL return 400 `VALIDATION_ERROR` and create nothing. `[Done]`
-- **R4.3** WHEN a Member sends `PATCH /api/v1/cards/{id}` with `title`, `description`, `priority` (optional, `low|medium|high` or `null`), `due_date` (R15), or `label_ids` (R16), THE backend SHALL validate, update the card and return 200. `[BE]`
+- **R4.3** WHEN a Member sends `PATCH /api/v1/cards/{id}` with `title`, `description`, `priority` (optional, `low|medium|high` or `null`), `due_date` (R15), or `label_ids` (R16), THE backend SHALL validate, update the card and return 200. `[Done]`
 - **R4.4** THE backend SHALL accept `priority` (`low|medium|high` or `null`) in card requests. THE backend SHALL reject `status` with 400 `VALIDATION_ERROR` (the column is the status; cards have no `status` field). `[Done]` Current: `priority` is validated with `validate.OneOf(["low", "medium", "high"])` and stored. `status` is not a field on the card model.
-- **R4.5** WHEN a Member deletes a card, THE backend SHALL set `deleted_at`, return 204, and exclude the card from board reads, comment access, search and analytics. `[Plan]` Assumption pending confirmation: D7. Current: `DELETE /api/v1/cards/{id}` removes the row (`db.session.delete`). The `deleted_at` column exists and only analytics filters on it.
-- **R4.6** THE frontend SHALL provide, on the board page: an "Add card" control in each column (title required, description optional), a card detail dialog to edit title, description, priority, due date, labels, and assignees, and a Delete card control with confirmation. `[Plan]` Current: `AddCardForm` and `CardDetailModal` exist but are not mounted.
-- **R4.7** IF a failed create or edit request returns an error, THEN THE frontend SHALL keep the typed values and show the error. `[Plan]`
+- **R4.5** WHEN a Member deletes a card, THE backend SHALL set `deleted_at`, return 204, and exclude the card from board reads, comment access, search and analytics. `[Done]` (B3 implemented)
+- **R4.6** THE frontend SHALL provide, on the board page: an "Add card" control in each column (title required, description optional), a card detail dialog to edit title, description, priority, due date, labels, and assignees, and a Delete card control with confirmation. `[Done]` (CardDetailModal mounted)
+- **R4.7** IF a failed create or edit request returns an error, THEN THE frontend SHALL keep the typed values and show the error. `[Done]`
 - **R4.8** THE backend SHALL return 404 `CARD_NOT_FOUND` for a card whose board the caller does not own, and 404 `COLUMN_NOT_FOUND` when creating in a column the caller does not own. `[Done]`
 
 Cards have `priority` (R4.4), `due_date` (R15), `labels[]` (R16), and `assignee_ids[]` (R18). The column acts as the status (D8, D9).
@@ -158,15 +158,15 @@ Status: backend Done except R5.3. UI Planned (the hook exists, is unmounted and 
 
 #### Acceptance criteria
 
-- **R5.1** WHEN a Member sends `PATCH /api/v1/cards/{id}/position` with `column_id` (UUID) and `order` (number, 0 or more), THE backend SHALL place the card in that column with that `order` value and return 200 with the card. `[BE]`
-- **R5.2** WHEN cards of a column are listed, THE backend SHALL order them by `order` ascending, then `created_at` ascending. `[BE]` (applies to the board read, R2.5)
+- **R5.1** WHEN a Member sends `PATCH /api/v1/cards/{id}/position` with `column_id` (UUID) and `order` (number, 0 or more), THE backend SHALL place the card in that column with that `order` value and return 200 with the card. `[Done]`
+- **R5.2** WHEN cards of a column are listed, THE backend SHALL order them by `order` ascending, then `created_at` ascending. `[Done]` (applies to the board read, R2.5)
 - **R5.3** THE backend SHALL reject a move whose destination column belongs to a different board than the card's current board with 404 `COLUMN_NOT_FOUND`. `[Plan]` Current: only ownership of the destination column is checked, so a card can move to another board of the same owner.
 - **R5.4** AFTER a move, THE backend SHALL renumber the `order` of the cards in the destination column and in the source column to 0.0, 1.0, 2.0, ... preserving the relative order. `[BE]` This is current behaviour. The visible order after a reload equals the dropped order. The midpoint trick (for example 1.5 between 1.0 and 2.0) therefore only decides where the card lands. It is not stored.
-- **R5.5** WHEN a Member drops a card, THE frontend SHALL compute `order` as the midpoint of its new neighbours (neighbour order + 1.0 at the end, half of the first card's order at the start, 0.0 in an empty column), send `{column_id, order}`, and update the screen before the response. `[Plan]` Current: `useDragAndDrop` sends `{column_id, position}`, which the backend rejects with 400, and no component uses the hook.
-- **R5.6** IF the move request fails, THEN THE frontend SHALL restore the previous position and show an error. `[Plan]`
-- **R5.7** WHEN a Member logs in again and opens the board, THE app SHALL show every card in the column and position it had after the last successful move. `[Plan]` Depends on R2.5. See R9.1 for why a login is needed.
-- **R5.8** THE frontend SHALL provide a way to move a card to another column without a pointer (a "Move to column" select in the card detail dialog). `[Plan]`
-- **R5.9** AFTER a move request settles, THE frontend SHALL reload the board so that its local `order` values equal the stored ones. `[Plan]` The backend renumbers orders after every move (R5.4), so locally computed values go stale.
+- **R5.5** WHEN a Member drops a card, THE frontend SHALL compute `order` as the midpoint of its new neighbours (neighbour order + 1.0 at the end, half of the first card's order at the start, 0.0 in an empty column), send `{column_id, order}`, and update the screen before the response. `[Done]` (lib/cardOrder.ts)
+- **R5.6** IF the move request fails, THEN THE frontend SHALL restore the previous position and show an error. `[Done]`
+- **R5.7** WHEN a Member logs in again and opens the board, THE app SHALL show every card in the column and position it had after the last successful move. `[Done]` Depends on R2.5. See R9.1 for why a login is needed.
+- **R5.8** THE frontend SHALL provide a way to move a card to another column without a pointer (a "Move to column" select in the card detail dialog). `[Done]`
+- **R5.9** AFTER a move request settles, THE frontend SHALL reload the board so that its local `order` values equal the stored ones. `[Done]` The backend renumbers orders after every move (R5.4), so locally computed values go stale.
 - **R5.10** IF the requested `order` equals the `order` of another card in the destination column, THEN THE backend SHALL place the moved card before that card. `[Plan]` Current: ties are broken by `created_at`, so a drop at the top of a column (new order 0, first card also 0 after renumbering) can land second.
 
 ### Requirement 6: Comments
@@ -177,13 +177,13 @@ Status: backend Done except R6.5. UI Planned.
 
 #### Acceptance criteria
 
-- **R6.1** WHEN a Member requests `GET /api/cards/{card_id}/comments` for a card on an owned board, THE backend SHALL return its comments oldest first with `id`, `card_id`, `author_id`, `body`, `created_at`, `updated_at`. `[BE]`
-- **R6.2** WHEN a Member submits `body` (1 to 2000 characters after trimming, not blank) to `POST /api/cards/{card_id}/comments`, THE backend SHALL create the comment with the caller as author and return 201. `[BE]`
-- **R6.3** WHEN the author sends `PATCH /api/comments/{id}` with `body`, THE backend SHALL validate as in R6.2 and return 200. `[BE]`
-- **R6.4** WHEN the author sends `DELETE /api/comments/{id}`, THE backend SHALL delete the comment and return 204. `[BE]`
+- **R6.1** WHEN a Member requests `GET /api/cards/{card_id}/comments` for a card on an owned board, THE backend SHALL return its comments oldest first with `id`, `card_id`, `author_id`, `body`, `created_at`, `updated_at`. `[Done]`
+- **R6.2** WHEN a Member submits `body` (1 to 2000 characters after trimming, not blank) to `POST /api/cards/{card_id}/comments`, THE backend SHALL create the comment with the caller as author and return 201. `[Done]`
+- **R6.3** WHEN the author sends `PATCH /api/comments/{id}` with `body`, THE backend SHALL validate as in R6.2 and return 200. `[Done]`
+- **R6.4** WHEN the author sends `DELETE /api/comments/{id}`, THE backend SHALL delete the comment and return 204. `[Done]`
 - **R6.5** IF a user who is not the author edits or deletes a comment, THEN THE backend SHALL return 404 `COMMENT_NOT_FOUND`, and THE backend SHALL check board ownership of the comment's card on edit and delete. `[Plan]` Current: 403 `COMMENT_ACCESS_DENIED`, which confirms the comment exists, and the board is not checked.
 - **R6.6** IF the card or comment does not exist or is not accessible, THEN THE backend SHALL return 404 `CARD_NOT_FOUND` or `COMMENT_NOT_FOUND`. `[Done]` for card routes.
-- **R6.7** THE frontend SHALL show, in the card detail dialog, the comment list (author shown as "You" when `author_id` equals the current user id), an add form, and edit and delete controls with confirmation on delete. `[Plan]` Current: `CardDetailModal` lists and adds comments but is not mounted, shows `author_id` as the author name, and has no edit or delete.
+- **R6.7** THE frontend SHALL show, in the card detail dialog, the comment list (author shown as "You" when `author_id` equals the current user id), an add form, and edit and delete controls with confirmation on delete. `[Done]` (CommentList mounted)
 
 ### Requirement 7: Profile
 
@@ -193,11 +193,11 @@ Status: backend Done. UI sends a wrong payload.
 
 #### Acceptance criteria
 
-- **R7.1** WHEN a Member requests `GET /api/users/me`, THE backend SHALL return `id`, `email`, `name`, `timezone`, `role`, `is_active`, `created_at`, `updated_at`, without the password hash. `[BE]`
-- **R7.2** WHEN a Member sends `PATCH /api/users/me` with `name` (up to 255 characters) and/or `timezone` (an IANA name, up to 64 characters), THE backend SHALL update only those fields and return 200. IF any other field (including `email`) is sent, THEN THE backend SHALL return 400. `[BE]`
-- **R7.3** THE email SHALL be read-only in the MVP. THE frontend SHALL show it as plain text and SHALL NOT send it. `[Plan]` Assumption pending confirmation: D5. Current: `/profile` sends `{email, timezone}` and always gets 400.
-- **R7.4** WHEN `/profile` opens, THE frontend SHALL load the profile from `GET /api/users/me` and SHALL send only `name` and `timezone` on save. `[Plan]`
-- **R7.5** IF saving fails, THEN THE frontend SHALL show the error and keep the form values. `[Plan]`
+- **R7.1** WHEN a Member requests `GET /api/users/me`, THE backend SHALL return `id`, `email`, `name`, `timezone`, `role`, `is_active`, `created_at`, `updated_at`, without the password hash. `[Done]`
+- **R7.2** WHEN a Member sends `PATCH /api/users/me` with `name` (up to 255 characters) and/or `timezone` (an IANA name, up to 64 characters), THE backend SHALL update only those fields and return 200. IF any other field (including `email`) is sent, THEN THE backend SHALL return 400. `[Done]`
+- **R7.3** THE email SHALL be read-only in the MVP. THE frontend SHALL show it as plain text and SHALL NOT send it. `[Done]` Assumption pending confirmation: D5.
+- **R7.4** WHEN `/profile` opens, THE frontend SHALL load the profile from `GET /api/users/me` and SHALL send only `name` and `timezone` on save. `[Done]`
+- **R7.5** IF saving fails, THEN THE frontend SHALL show the error and keep the form values. `[Done]`
 
 Note (profile UX, Done): the profile page no longer shows the role. It disables Save and Reset while nothing differs from the saved values, warns on tab close or reload while there are unsaved changes (in-app navigation is not guarded), offers Reset, shows a name character counter and shows an initials avatar next to the name and email.
 
@@ -284,7 +284,7 @@ Status: Backend only. No UI and no producer in the MVP (D6).
 
 - **R14.1** WHEN a Member requests `GET /api/notifications` (`page`, `per_page` up to 100), THE backend SHALL return the caller's notifications, newest first, with `meta` `{page, per_page, total}`. `[BE]`
 - **R14.2** WHEN a Member sends `PATCH /api/notifications/{id}/read`, THE backend SHALL set `is_read` and return 200, or 404 `NOTIFICATION_NOT_FOUND` for another user's notification. `[BE]`
-- **R14.3** THE frontend SHALL NOT show `NotificationBell` in the MVP. `[Done]` (the component is not mounted)
+- **R14.3** THE frontend SHALL show `NotificationBell` on every authenticated page. `[Done]` (NotificationBell is mounted in Sidebar.tsx)
 - **R14.4** Nothing in the backend creates notifications. A search of `backend/app` found the `Notification` class only in its model file. `[Plan]` when notifications return (post-MVP).
 
 ### Requirement 15: Card due dates
@@ -297,24 +297,24 @@ Terms: "UTC ISO" means `YYYY-MM-DDTHH:MM:SSZ`. "Local time" means the time zone 
 
 #### Acceptance criteria
 
-- **R15.1** WHEN a Member sends `due_date` (a string or `null`) to `POST /api/v1/columns/{column_id}/cards`, THE backend SHALL store it and return 201 with `due_date` in the card object. WHEN `due_date` is omitted, THE card SHALL have `due_date` `null`. `[Plan]`
-- **R15.2** WHEN a Member sends `PATCH /api/v1/cards/{card_id}` with a valid `due_date` string, THE backend SHALL replace the stored value and return 200. WHEN the body omits `due_date`, THE stored value SHALL stay unchanged. `[Plan]`
-- **R15.3** WHEN a Member sends `PATCH /api/v1/cards/{card_id}` with `"due_date": null`, THE backend SHALL clear the value and return 200 with `due_date` `null`. `[Plan]`
-- **R15.4** IF `due_date` is not an ISO 8601 date-time string, THEN THE backend SHALL return 400 `VALIDATION_ERROR` with `details.due_date` and SHALL change nothing. `[Plan]`
-- **R15.5** IF `due_date` has no UTC offset (naive, for example `2026-12-01T17:00:00`), THEN THE backend SHALL return 400 `VALIDATION_ERROR` with `details.due_date`. `[Plan]`
-- **R15.6** IF the value, as sent or converted to UTC, has a year before 2000 or after 2100, THEN THE backend SHALL return 400 `VALIDATION_ERROR` with `details.due_date`. This SHALL also hold for extreme values whose conversion to UTC overflows (for example `9999-12-31T23:59:59-05:00` and `0001-01-01T00:00:00+05:00`): the response is 400, never 500. `[Plan]`
-- **R15.7** THE backend SHALL store `due_date` as `timestamp with time zone` in UTC, discard fractional seconds, and serialise it as UTC ISO with the `Z` suffix. An input with another offset (for example `+07:00`) SHALL be converted to UTC. `[Plan]`
-- **R15.8** EVERY card object returned by the backend SHALL contain `due_date` (a UTC ISO string or `null`): create, update, position, board read (route 6), card list (route 26) and the label replace route. `[Plan]`
-- **R15.9** IF the card does not exist or its board is owned by another user, THEN `PATCH /api/v1/cards/{card_id}` SHALL return 404 `CARD_NOT_FOUND` and leave the card unchanged. A request without a valid token SHALL return 401. `[Plan]`
-- **R15.10** THE card schemas SHALL keep rejecting unknown fields with 400. A PATCH that does not contain `due_date` SHALL NOT change it. A card move (route 16) SHALL keep the card's `due_date`. `[Plan]`
-- **R15.11** THE database change SHALL be one nullable column `cards.due_date` with no default and no backfill, so that the code deployed before this change keeps working against the migrated database. THE migration SHALL have a working downgrade. `[Plan]`
-- **R15.12** THE card dialog SHALL contain an input of type `datetime-local` with the accessible name "Due date", filled with the stored value in local time, a Save control and a "Remove due date" control. All three controls SHALL use `BaseButton` where they are buttons. `[Plan]`
-- **R15.13** WHEN the Member saves, THE frontend SHALL send exactly `{"due_date": "<UTC ISO>"}` to `PATCH /api/v1/cards/{card_id}`. WHEN the Member chooses "Remove due date", THE frontend SHALL send exactly `{"due_date": null}`. THE Remove control SHALL be disabled while the card has no due date. `[Plan]`
-- **R15.14** WHILE the input is empty or holds a date outside 2000..2100, THE Save control SHALL be disabled. IF the request fails, THEN THE frontend SHALL show the error with `role="alert"` and keep the typed value. `[Plan]`
-- **R15.15** THE frontend SHALL compute the due state from the due date and a `now` argument: `none` (no due date), `overdue` (due before now), `soon` (due from now up to and including now + 24 hours), `upcoming` (later). A due date equal to `now` is `soon`. `[Plan]`
-- **R15.16** THE board card and each row on `/my-tasks` SHALL show, for the states `overdue`, `soon` and `upcoming`, a `BaseBadge` with an icon and visible text ("Overdue", "Due soon" or "Due" followed by the date). THE state `none` SHALL show no badge. THE meaning SHALL NOT depend on colour alone. THE badge SHALL carry a `title` with the full local date and time. `[Plan]`
-- **R15.17** THE frontend SHALL show dates in the browser's locale and time zone. THE profile `timezone` SHALL NOT be used to display due dates in this release. `[Plan]`
-- **R15.18** THE board page SHALL recompute badge states with a fresh `now` every 60 seconds and after each board reload, without a page reload. `[Plan]`
+- **R15.1** WHEN a Member sends `due_date` (a string or `null`) to `POST /api/v1/columns/{column_id}/cards`, THE backend SHALL store it and return 201 with `due_date` in the card object. WHEN `due_date` is omitted, THE card SHALL have `due_date` `null`. `[Done]`
+- **R15.2** WHEN a Member sends `PATCH /api/v1/cards/{card_id}` with a valid `due_date` string, THE backend SHALL replace the stored value and return 200. WHEN the body omits `due_date`, THE stored value SHALL stay unchanged. `[Done]`
+- **R15.3** WHEN a Member sends `PATCH /api/v1/cards/{card_id}` with `"due_date": null`, THE backend SHALL clear the value and return 200 with `due_date` `null`. `[Done]`
+- **R15.4** IF `due_date` is not an ISO 8601 date-time string, THEN THE backend SHALL return 400 `VALIDATION_ERROR` with `details.due_date` and SHALL change nothing. `[Done]`
+- **R15.5** IF `due_date` has no UTC offset (naive, for example `2026-12-01T17:00:00`), THEN THE backend SHALL return 400 `VALIDATION_ERROR` with `details.due_date`. `[Done]`
+- **R15.6** IF the value, as sent or converted to UTC, has a year before 2000 or after 2100, THEN THE backend SHALL return 400 `VALIDATION_ERROR` with `details.due_date`. This SHALL also hold for extreme values whose conversion to UTC overflows (for example `9999-12-31T23:59:59-05:00` and `0001-01-01T00:00:00+05:00`): the response is 400, never 500. `[Done]`
+- **R15.7** THE backend SHALL store `due_date` as `timestamp with time zone` in UTC, discard fractional seconds, and serialise it as UTC ISO with the `Z` suffix. An input with another offset (for example `+07:00`) SHALL be converted to UTC. `[Done]`
+- **R15.8** EVERY card object returned by the backend SHALL contain `due_date` (a UTC ISO string or `null`): create, update, position, board read (route 6), card list (route 26) and the label replace route. `[Done]`
+- **R15.9** IF the card does not exist or its board is owned by another user, THEN `PATCH /api/v1/cards/{card_id}` SHALL return 404 `CARD_NOT_FOUND` and leave the card unchanged. A request without a valid token SHALL return 401. `[Done]`
+- **R15.10** THE card schemas SHALL keep rejecting unknown fields with 400. A PATCH that does not contain `due_date` SHALL NOT change it. A card move (route 16) SHALL keep the card's `due_date`. `[Done]`
+- **R15.11** THE database change SHALL be one nullable column `cards.due_date` with no default and no backfill, so that the code deployed before this change keeps working against the migrated database. THE migration SHALL have a working downgrade. `[Done]`
+- **R15.12** THE card dialog SHALL contain an input of type `datetime-local` with the accessible name "Due date", filled with the stored value in local time, a Save control and a "Remove due date" control. All three controls SHALL use `BaseButton` where they are buttons. `[Done]`
+- **R15.13** WHEN the Member saves, THE frontend SHALL send exactly `{"due_date": "<UTC ISO>"}` to `PATCH /api/v1/cards/{card_id}`. WHEN the Member chooses "Remove due date", THE frontend SHALL send exactly `{"due_date": null}`. THE Remove control SHALL be disabled while the card has no due date. `[Done]`
+- **R15.14** WHILE the input is empty or holds a date outside 2000..2100, THE Save control SHALL be disabled. IF the request fails, THEN THE frontend SHALL show the error with `role="alert"` and keep the typed value. `[Done]`
+- **R15.15** THE frontend SHALL compute the due state from the due date and a `now` argument: `none` (no due date), `overdue` (due before now), `soon` (due from now up to and including now + 24 hours), `upcoming` (later). A due date equal to `now` is `soon`. `[Done]`
+- **R15.16** THE board card and each row on `/my-tasks` SHALL show, for the states `overdue`, `soon` and `upcoming`, a `BaseBadge` with an icon and visible text ("Overdue", "Due soon" or "Due" followed by the date). THE state `none` SHALL show no badge. THE meaning SHALL NOT depend on colour alone. THE badge SHALL carry a `title` with the full local date and time. `[Done]`
+- **R15.17** THE frontend SHALL show dates in the browser's locale and time zone. THE profile `timezone` SHALL NOT be used to display due dates in this release. `[Done]`
+- **R15.18** THE board page SHALL recompute badge states with a fresh `now` every 60 seconds and after each board reload, without a page reload. `[Done]`
 
 ### Requirement 16: Board labels
 
@@ -326,26 +326,26 @@ A label belongs to one board. A card can carry labels of its own board only. Col
 
 #### Acceptance criteria
 
-- **R16.1** WHEN a Member requests `GET /api/boards/{board_id}/labels` for an owned board, THE backend SHALL return 200 with the labels ordered by lowercase name, then name, then id. IF the board is missing or owned by someone else, THEN THE backend SHALL return 404 `BOARD_NOT_FOUND`. `[Plan]`
-- **R16.2** WHEN a Member sends `POST /api/boards/{board_id}/labels` with `name` (1 to 50 characters after trimming, not blank) and `color` (one of the 8 keys), THE backend SHALL create the label and return 201 with `id`, `board_id`, `name`, `color`, `created_at`, `updated_at`. `[Plan]`
-- **R16.3** IF `name` or `color` is missing, blank, too long or not allowed, or the body has an unknown field, THEN THE backend SHALL return 400 `VALIDATION_ERROR` and create nothing. `[Plan]`
-- **R16.4** IF the board already has a label with the same name compared case-insensitively, THEN THE backend SHALL return 409 `RESOURCE_CONFLICT`. Two different boards MAY have labels with the same name. `[Plan]`
-- **R16.5** WHEN a Member sends `PATCH /api/labels/{label_id}` with `name` and/or `color`, THE backend SHALL validate as in R16.2 and R16.4 and return 200 with the label. A body with neither field SHALL return 400. A change of letter case only on the same label SHALL NOT conflict with itself. IF the label is missing or on a board owned by someone else, THEN THE backend SHALL return 404 `LABEL_NOT_FOUND`. `[Plan]`
-- **R16.6** WHEN a Member sends `DELETE /api/labels/{label_id}`, THE backend SHALL hard-delete the label and its card associations and return 204. The cards themselves SHALL stay. Afterwards no card object SHALL contain that label. `[Plan]`
-- **R16.7** WHEN a Member sends `PUT /api/v1/cards/{card_id}/labels` with `label_ids` (a list of UUIDs), THE backend SHALL replace the card's label set with exactly that list in one transaction and return 200 with the card object. An empty list SHALL remove all labels. `[Plan]`
-- **R16.8** IF any id in `label_ids` is not a label of the same board as the card, THEN THE backend SHALL return 404 `LABEL_NOT_FOUND` and change nothing. The response SHALL be the same for a label of another board of the caller, a label of another user's board and an unknown id. `[Plan]`
-- **R16.9** IF `label_ids` contains a duplicate id, more than 20 ids, a value that is not a UUID, or the body has an unknown field, THEN THE backend SHALL return 400 `VALIDATION_ERROR` and change nothing. `[Plan]`
-- **R16.10** THE board read (route 6) SHALL contain `labels` (all labels of the board, order as R16.1). `[Plan]`
-- **R16.11** EVERY card object returned by the backend SHALL contain `labels`, a list of `{id, name, color}` ordered as R16.1 (`[]` when none): create, update, position, board read, card list (route 26) and route 31. `[Plan]`
-- **R16.12** THE board read and the card list SHALL load labels with a fixed number of queries, not one query per card. `[Plan]`
-- **R16.13** EVERY new route SHALL answer 401 without a valid token and SHALL resolve the label, card or board through its board owner. A path id that is not a UUID SHALL return 404. `[Plan]`
-- **R16.14** WHEN a board is deleted, THE database SHALL delete its labels and associations by cascade. A soft-deleted card SHALL keep its associations but SHALL NOT appear in any read. `[Plan]`
-- **R16.15** THE database change SHALL add only new tables (`labels`, `card_labels`) and SHALL have a working downgrade. `[Plan]`
-- **R16.16** EACH label on a board card SHALL show as a pill with the colour and the name text, never colour alone. A long name SHALL be truncated visually and the full name SHALL be in the `title` attribute. `[Plan]`
-- **R16.17** THE card dialog SHALL have a "Labels" section with a button that opens a multi-select list (`role="listbox"`, `aria-multiselectable`, options with `aria-selected`). The list SHALL work with Arrow keys, Space and Enter, SHALL close on Escape without saving and return focus to the button, and SHALL send the chosen set once through an Apply control as exactly `{"label_ids": [...]}`. `[Plan]`
-- **R16.18** THE card dialog SHALL let the Member create a label (name and colour), and rename, recolour and delete an existing label. THE delete SHALL ask for confirmation naming the label. A 409 SHALL show "A label with that name already exists." and keep the typed name. `[Plan]`
-- **R16.19** THE colour choice SHALL show the colour name as text next to each swatch. THE frontend SHALL define the 8 colours in one file, `frontend/lib/labelColors.ts`, with no raw hex value in any component. EACH label background and text pair SHALL have a contrast ratio of at least 4.5:1, asserted by a test that computes it. `[Plan]`
-- **R16.20** AFTER a label is created, renamed, recoloured or deleted, THE frontend SHALL reload the board so that every card shows the current label data. `[Plan]`
+- **R16.1** WHEN a Member requests `GET /api/boards/{board_id}/labels` for an owned board, THE backend SHALL return 200 with the labels ordered by lowercase name, then name, then id. IF the board is missing or owned by someone else, THEN THE backend SHALL return 404 `BOARD_NOT_FOUND`. `[Done]`
+- **R16.2** WHEN a Member sends `POST /api/boards/{board_id}/labels` with `name` (1 to 50 characters after trimming, not blank) and `color` (one of the 8 keys), THE backend SHALL create the label and return 201 with `id`, `board_id`, `name`, `color`, `created_at`, `updated_at`. `[Done]`
+- **R16.3** IF `name` or `color` is missing, blank, too long or not allowed, or the body has an unknown field, THEN THE backend SHALL return 400 `VALIDATION_ERROR` and create nothing. `[Done]`
+- **R16.4** IF the board already has a label with the same name compared case-insensitively, THEN THE backend SHALL return 409 `RESOURCE_CONFLICT`. Two different boards MAY have labels with the same name. `[Done]`
+- **R16.5** WHEN a Member sends `PATCH /api/labels/{label_id}` with `name` and/or `color`, THE backend SHALL validate as in R16.2 and R16.4 and return 200 with the label. A body with neither field SHALL return 400. A change of letter case only on the same label SHALL NOT conflict with itself. IF the label is missing or on a board owned by someone else, THEN THE backend SHALL return 404 `LABEL_NOT_FOUND`. `[Done]`
+- **R16.6** WHEN a Member sends `DELETE /api/labels/{label_id}`, THE backend SHALL hard-delete the label and its card associations and return 204. The cards themselves SHALL stay. Afterwards no card object SHALL contain that label. `[Done]`
+- **R16.7** WHEN a Member sends `PUT /api/v1/cards/{card_id}/labels` with `label_ids` (a list of UUIDs), THE backend SHALL replace the card's label set with exactly that list in one transaction and return 200 with the card object. An empty list SHALL remove all labels. `[Done]`
+- **R16.8** IF any id in `label_ids` is not a label of the same board as the card, THEN THE backend SHALL return 404 `LABEL_NOT_FOUND` and change nothing. The response SHALL be the same for a label of another board of the caller, a label of another user's board and an unknown id. `[Done]`
+- **R16.9** IF `label_ids` contains a duplicate id, more than 20 ids, a value that is not a UUID, or the body has an unknown field, THEN THE backend SHALL return 400 `VALIDATION_ERROR` and change nothing. `[Done]`
+- **R16.10** THE board read (route 6) SHALL contain `labels` (all labels of the board, order as R16.1). `[Done]`
+- **R16.11** EVERY card object returned by the backend SHALL contain `labels`, a list of `{id, name, color}` ordered as R16.1 (`[]` when none): create, update, position, board read, card list (route 26) and route 31. `[Done]`
+- **R16.12** THE board read and the card list SHALL load labels with a fixed number of queries, not one query per card. `[Done]`
+- **R16.13** EVERY new route SHALL answer 401 without a valid token and SHALL resolve the label, card or board through its board owner. A path id that is not a UUID SHALL return 404. `[Done]`
+- **R16.14** WHEN a board is deleted, THE database SHALL delete its labels and associations by cascade. A soft-deleted card SHALL keep its associations but SHALL NOT appear in any read. `[Done]`
+- **R16.15** THE database change SHALL add only new tables (`labels`, `card_labels`) and SHALL have a working downgrade. `[Done]`
+- **R16.16** EACH label on a board card SHALL show as a pill with the colour and the name text, never colour alone. A long name SHALL be truncated visually and the full name SHALL be in the `title` attribute. `[Done]`
+- **R16.17** THE card dialog SHALL have a "Labels" section with a button that opens a multi-select list (`role="listbox"`, `aria-multiselectable`, options with `aria-selected`). The list SHALL work with Arrow keys, Space and Enter, SHALL close on Escape without saving and return focus to the button, and SHALL send the chosen set once through an Apply control as exactly `{"label_ids": [...]}`. `[Done]`
+- **R16.18** THE card dialog SHALL let the Member create a label (name and colour), and rename, recolour and delete an existing label. THE delete SHALL ask for confirmation naming the label. A 409 SHALL show "A label with that name already exists." and keep the typed name. `[Done]`
+- **R16.19** THE colour choice SHALL show the colour name as text next to each swatch. THE frontend SHALL define the 8 colours in one file, `frontend/lib/labelColors.ts`, with no raw hex value in any component. EACH label background and text pair SHALL have a contrast ratio of at least 4.5:1, asserted by a test that computes it. `[Done]`
+- **R16.20** AFTER a label is created, renamed, recoloured or deleted, THE frontend SHALL reload the board so that every card shows the current label data. `[Done]`
 
 ### Requirement 17: Board filter
 
@@ -355,21 +355,21 @@ Status: Planned (phase 3). Design: `design.md` section 17.3. Decisions: section 
 
 #### Acceptance criteria
 
-- **R17.1** THE board page SHALL show a filter bar between the board title and the columns, with a keyword input, a label multi-select, a due date select (Any, Overdue, Due within 24 hours, Due within 7 days, No due date) and a "Clear filters" button. Every control SHALL have an accessible name. `[Plan]`
-- **R17.2** THE keyword filter SHALL keep a card WHEN the trimmed keyword occurs, ignoring letter case, in the card title or description. An empty or blank keyword SHALL keep every card. THE input SHALL accept at most 100 characters. `[Plan]`
-- **R17.3** THE label filter SHALL keep a card WHEN it carries at least one of the selected labels (ANY). With no label selected, every card SHALL be kept. `[Plan]`
-- **R17.4** THE due date filter SHALL use these rules with the current `now`: Overdue keeps `due < now`. Due within 24 hours keeps `now <= due <= now + 24 h`. Due within 7 days keeps `now <= due <= now + 7 days`. No due date keeps `due` null. Any keeps all. A card without a due date SHALL NOT match Overdue, 24 hours or 7 days. `[Plan]`
-- **R17.5** THE three filters SHALL combine with AND. `[Plan]`
-- **R17.6** NON-matching cards SHALL be hidden, not removed from the board data. WHILE any filter is active, EACH column header SHALL show "x of y", where x is the number of visible cards and y the number of cards in the column. WHILE no filter is active, no count SHALL be shown. `[Plan]`
-- **R17.7** WHEN a filter is active, the board has at least one card and no card matches, THE frontend SHALL show "No cards match these filters." once, as a `role="status"` block between the filter bar and the columns. A column that has cards but none visible SHALL show no empty text. `[Plan]`
-- **R17.8** WHEN the Member chooses "Clear filters", THE frontend SHALL reset all three filters and remove them from the URL. THE control SHALL be disabled while no filter is active. `[Plan]`
-- **R17.9** THE filter state SHALL be kept in the URL query `q`, `labels` (comma-separated label ids) and `due` (`overdue`, `24h`, `7d` or `none`), so that a reload shows the same filters. A value that is invalid (unknown `due`, a label id that is not a label of this board) SHALL be ignored without an error, and a `q` longer than 100 characters SHALL be cut to its first 100 characters. THE URL SHALL NOT be rewritten because of an ignored value: only a user action changes it, so a reload before the board has loaded keeps `labels` intact. `[Plan]`
-- **R17.10** WHILE any filter is active, THE frontend SHALL turn drag and drop off and SHALL show the text "Drag and drop is off while filters are active. Clear filters to move cards." in the filter bar. The "Move to column" control in the card dialog SHALL keep working and SHALL compute the new `order` from the complete column. `[Plan]`
-- **R17.11** WHEN the Member presses the `f` key without modifier keys while focus is not in an input, textarea, select or editable element and no dialog is open, THE frontend SHALL focus the keyword input (and open the filter bar on a narrow screen) and SHALL NOT type the character. THE input SHALL expose `aria-keyshortcuts="f"` and the hint SHALL be visible. `[Plan]`
-- **R17.12** ON screens narrower than the `md` breakpoint, THE filter bar SHALL be collapsible with a button that has `aria-expanded` and `aria-controls`, and the button SHALL show the number of active filters. AT 375 px the page SHALL NOT scroll horizontally with the bar open. `[Plan]`
-- **R17.13** THE board filter SHALL NOT call the backend. THE existing global `SearchBar` SHALL stay unchanged. `[Plan]`
-- **R17.14** THE filter functions SHALL be pure, take `now` as an argument and SHALL NOT change their input. `[Plan]`
-- **R17.15** WHEN a filter is active, THE filter bar SHALL contain a status text "N of M cards shown" (`role="status"`, polite). It SHALL be updated only after typing has paused for 300 ms. `[Plan]`
+- **R17.1** THE board page SHALL show a filter bar between the board title and the columns, with a keyword input, a label multi-select, a due date select (Any, Overdue, Due within 24 hours, Due within 7 days, No due date) and a "Clear filters" button. Every control SHALL have an accessible name. `[Done]`
+- **R17.2** THE keyword filter SHALL keep a card WHEN the trimmed keyword occurs, ignoring letter case, in the card title or description. An empty or blank keyword SHALL keep every card. THE input SHALL accept at most 100 characters. `[Done]`
+- **R17.3** THE label filter SHALL keep a card WHEN it carries at least one of the selected labels (ANY). With no label selected, every card SHALL be kept. `[Done]`
+- **R17.4** THE due date filter SHALL use these rules with the current `now`: Overdue keeps `due < now`. Due within 24 hours keeps `now <= due <= now + 24 h`. Due within 7 days keeps `now <= due <= now + 7 days`. No due date keeps `due` null. Any keeps all. A card without a due date SHALL NOT match Overdue, 24 hours or 7 days. `[Done]`
+- **R17.5** THE three filters SHALL combine with AND. `[Done]`
+- **R17.6** NON-matching cards SHALL be hidden, not removed from the board data. WHILE any filter is active, EACH column header SHALL show "x of y", where x is the number of visible cards and y the number of cards in the column. WHILE no filter is active, no count SHALL be shown. `[Done]`
+- **R17.7** WHEN a filter is active, the board has at least one card and no card matches, THE frontend SHALL show "No cards match these filters." once, as a `role="status"` block between the filter bar and the columns. A column that has cards but none visible SHALL show no empty text. `[Done]`
+- **R17.8** WHEN the Member chooses "Clear filters", THE frontend SHALL reset all three filters and remove them from the URL. THE control SHALL be disabled while no filter is active. `[Done]`
+- **R17.9** THE filter state SHALL be kept in the URL query `q`, `labels` (comma-separated label ids) and `due` (`overdue`, `24h`, `7d` or `none`), so that a reload shows the same filters. A value that is invalid (unknown `due`, a label id that is not a label of this board) SHALL be ignored without an error, and a `q` longer than 100 characters SHALL be cut to its first 100 characters. THE URL SHALL NOT be rewritten because of an ignored value: only a user action changes it, so a reload before the board has loaded keeps `labels` intact. `[Done]`
+- **R17.10** WHILE any filter is active, THE frontend SHALL turn drag and drop off and SHALL show the text "Drag and drop is off while filters are active. Clear filters to move cards." in the filter bar. The "Move to column" control in the card dialog SHALL keep working and SHALL compute the new `order` from the complete column. `[Done]`
+- **R17.11** WHEN the Member presses the `f` key without modifier keys while focus is not in an input, textarea, select or editable element and no dialog is open, THE frontend SHALL focus the keyword input (and open the filter bar on a narrow screen) and SHALL NOT type the character. THE input SHALL expose `aria-keyshortcuts="f"` and the hint SHALL be visible. `[Done]`
+- **R17.12** ON screens narrower than the `md` breakpoint, THE filter bar SHALL be collapsible with a button that has `aria-expanded` and `aria-controls`, and the button SHALL show the number of active filters. AT 375 px the page SHALL NOT scroll horizontally with the bar open. `[Done]`
+- **R17.13** THE board filter SHALL NOT call the backend. THE existing global `SearchBar` SHALL stay unchanged. `[Done]`
+- **R17.14** THE filter functions SHALL be pure, take `now` as an argument and SHALL NOT change their input. `[Done]`
+- **R17.15** WHEN a filter is active, THE filter bar SHALL contain a status text "N of M cards shown" (`role="status"`, polite). It SHALL be updated only after typing has paused for 300 ms. `[Done]`
 
 ### Requirement 18: Board members and card assignees
 
@@ -527,3 +527,117 @@ The product owner chose the three features and their order ("mulai dari tanggal 
 | D19 | Migrations                              | Two migrations, one per phase: phase 1 adds `cards.due_date`, phase 2 adds `labels` and `card_labels`. Phase 3 has none. Justification in `design.md` section 17.4. | Phase 1 can ship alone and be rolled back alone. The label migration is larger and carries the risk. A combined migration would tie due dates to it.                      |
 | D20 | Due date serialisation                  | UTC with `Z` and second precision, for this field only. Existing timestamps keep `+00:00`.                                                                          | `api-contracts.md` asks for `Z`. Changing existing fields is a breaking change and out of scope.                                                                          |
 | D21 | Labels per board                        | No limit on the number of labels per board in this release. Open risk recorded in `design.md` section 17.5. The limit of 20 labels per card stays.                  | The brief fixes only the per-card limit. A board limit would be a new product rule and needs the product owner.                                                           |
+
+### Requirement 19: Personal Notes
+
+**Description:** Users can maintain personal notes stored client-side (no backend). Covers the `/notes` page.
+
+#### Acceptance criteria
+
+- **R19.1** User can create a note with a title and body. `[Done]`
+- **R19.2** Notes are persisted in the user's browser via localStorage (keyed per user). `[Done]`
+- **R19.3** User can pin a note so it appears first in the list. `[Done]`
+- **R19.4** User can search/filter notes by title or body text. `[Done]`
+- **R19.5** User can edit an existing note. `[Done]`
+- **R19.6** User can delete a note with a confirmation prompt. `[Done]`
+- **R19.7** The `/notes` page is accessible from the sidebar navigation. `[Done]`
+
+### Requirement 20: Notifications Inbox Page
+
+**Description:** Users can view all their notifications in a dedicated `/inbox` page, beyond the bell widget.
+
+#### Acceptance criteria
+
+- **R20.1** The `/inbox` page shows all notifications with relative timestamps. `[Done]`
+- **R20.2** User can filter to view only unread notifications. `[Done]`
+- **R20.3** User can mark an individual notification as read. `[Done]`
+- **R20.4** User can mark all notifications as read with a single action. `[Done]`
+- **R20.5** Navigating to `/inbox` with a `?item=` query param highlights the referenced notification. `[Done]`
+- **R20.6** The `/inbox` page is accessible from the sidebar navigation. `[Done]`
+
+### Requirement 21: Reports / Analytics Dashboard
+
+**Description:** Users can view workspace-level statistics at the `/reports` page.
+
+#### Acceptance criteria
+
+- **R21.1** The `/reports` page shows total boards in the workspace. `[Done]`
+- **R21.2** The `/reports` page shows total cards assigned to the current user. `[Done]`
+- **R21.3** The `/reports` page shows overdue and due-soon card counts. `[Done]`
+- **R21.4** The `/reports` page shows high-priority card count. `[Done]`
+- **R21.5** The `/reports` page shows unread notification count. `[Done]`
+- **R21.6** A completion ring visualises the fraction of completed cards across columns marked `is_done`. `[Done]`
+- **R21.7** A workspace health bar summarises overall progress. `[Done]`
+- **R21.8** A Refresh button re-fetches all stats from the backend. `[Done]`
+- **R21.9** The `/reports` page is accessible from the sidebar navigation. `[Done]`
+
+### Requirement 22: Board Favorites
+
+**Description:** Users can mark boards as favorites for quick access.
+
+#### Acceptance criteria
+
+- **R22.1** Each board has an `is_favorite` boolean field visible in the boards list API response. `[Done]`
+- **R22.2** User can toggle a board as favorite; the backend persists the value via PATCH. `[Done]`
+- **R22.3** Favorited boards appear in a dedicated Favorites section in the sidebar. `[Done]`
+
+### Requirement 23: Board Background Picker
+
+**Description:** Users can customise the visual background of a board.
+
+#### Acceptance criteria
+
+- **R23.1** A background picker control is accessible from the board detail page. `[Done]`
+- **R23.2** User can select a background color or image from a predefined set. `[Done]`
+- **R23.3** The selected background is applied to the board page immediately. `[Done]`
+- **R23.4** Background preference is persisted in browser storage per board. `[Done]`
+
+### Requirement 24: Board List View
+
+**Description:** Users can switch a board from Kanban card view to a flat list view.
+
+#### Acceptance criteria
+
+- **R24.1** A view toggle on the board page allows switching between Kanban, List, and Calendar views. `[Done]`
+- **R24.2** In List view, cards are displayed as rows grouped by column. `[Done]`
+
+### Requirement 25: Board Import / Export
+
+**Description:** Users can export a board to JSON and import a board from JSON.
+
+#### Acceptance criteria
+
+- **R25.1** An Export control on the board page downloads a JSON file containing board columns and cards. `[Done]`
+- **R25.2** An Import control on the boards page accepts a valid JSON file and creates a new board with the imported structure. `[Done]`
+- **R25.3** Imported board JSON is validated before creating any records. `[Done]`
+
+### Requirement 26: Card Sort and Group
+
+**Description:** Users can sort and group cards within a board.
+
+#### Acceptance criteria
+
+- **R26.1** A sort dropdown on the board page allows sorting cards by: Manual order, Due date, Priority, Created date, Title. `[Done]`
+- **R26.2** A group-by control allows grouping cards by Priority (shows priority group headers). `[Done]`
+- **R26.3** Selecting None for group-by restores the flat column view. `[Done]`
+
+### Requirement 27: Column Colour and Done Flag
+
+**Description:** Columns support a visual colour and a done-state flag.
+
+#### Acceptance criteria
+
+- **R27.1** Each column has a `color` field (`gray`/`blue`/`orange`/`green`/`red`) visible in the column header. `[Done]`
+- **R27.2** User can cycle the column colour via a colour chip control in the column header. `[Done]`
+- **R27.3** The colour is persisted in the backend (`board_columns.color`). `[Done]`
+- **R27.4** Each column has an `is_done` boolean field used to identify completion columns. `[Done]`
+- **R27.5** The `is_done` flag is included in board import/export data. `[Done]`
+
+### Requirement 28: Workspace Summary API
+
+**Description:** A backend endpoint returns workspace-level statistics.
+
+#### Acceptance criteria
+
+- **R28.1** `GET /api/v1/workspace/summary` returns `workspace_name`, `projects` (board count), `tasks` (card count), and `members` count. `[Done]`
+- **R28.2** The endpoint requires authentication and returns only data accessible to the requesting user. `[Done]`
