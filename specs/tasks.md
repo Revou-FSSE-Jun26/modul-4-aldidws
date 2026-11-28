@@ -326,49 +326,54 @@ First usable milestone: B3, B1, F1, F2, F4, F5, F6. A user can then create a boa
 
 Every route in `design.md` section 5.2 and every page has a task or an explicit "no change". Routes 27 to 31 are defined in `design.md` section 17.2 (tasks B15, F15).
 
-| Route / page                                 | Task or note                                                                   |
-| -------------------------------------------- | ------------------------------------------------------------------------------ |
-| 1 `POST /api/auth/register`                  | No change. Tests exist. C1 adds a payload contract test. P1 moves the prefix.  |
-| 2 `POST /api/auth/login`                     | B7, B12, P7. P1 moves the prefix.                                              |
-| 3 `GET /api/health`                          | No change. Tests exist.                                                        |
-| 4 `POST /api/boards`                         | B9, B10. F2 builds the UI.                                                     |
-| 5 `GET /api/boards`                          | No change. B10 adds isolation tests.                                           |
-| 6 `GET /api/boards/{id}`                     | B1 (response change), B11.                                                     |
-| 7 `PATCH /api/boards/{id}`                   | B9, B10. F9 builds the UI.                                                     |
-| 8 `DELETE /api/boards/{id}`                  | B4. F9 builds the UI.                                                          |
-| 9 `POST /api/boards/{id}/columns`            | B10. F5 builds the UI.                                                         |
-| 10 `PATCH /api/columns/{id}`                 | B10. F5.                                                                       |
-| 11 `DELETE /api/columns/{id}`                | B2. F5.                                                                        |
-| 12 `PATCH /api/boards/{id}/columns/reorder`  | B10. F5.                                                                       |
-| 13 `POST /api/v1/columns/{id}/cards`         | B8. F6.                                                                        |
-| 14 `PATCH /api/v1/cards/{id}`                | B8. F7.                                                                        |
-| 15 `DELETE /api/v1/cards/{id}`               | B3. F7.                                                                        |
-| 16 `PATCH /api/v1/cards/{id}/position`       | B5. F7 (move-to select), F8.                                                   |
-| 17 `GET /api/cards/{id}/comments`            | B3 (deleted cards), F7.                                                        |
-| 18 `POST /api/cards/{id}/comments`           | F7. Tests exist.                                                               |
-| 19 `PATCH /api/comments/{id}`                | B6. F7.                                                                        |
-| 20 `DELETE /api/comments/{id}`               | B6. F7.                                                                        |
-| 21 `GET /api/users/me`                       | B10. F10.                                                                      |
-| 22 `PATCH /api/users/me`                     | B10. F10.                                                                      |
-| 23 `GET /api/notifications`                  | B10 (tests only). No UI change (F13).                                          |
-| 24 `PATCH /api/notifications/{id}/read`      | B10 (tests only). No UI change (F13).                                          |
-| 25 `GET /api/analytics/boards/{id}/summary`  | B10 (tests only). No UI (D11).                                                 |
-| 26 `GET /api/v1/cards` (added, D8 and D13)   | B13. F11 (search), F12 (My Tasks).                                             |
-| 13, 14, 16 (due date field)                  | B14 (backend), F14 (UI), E2.                                                   |
-| 6, 26 (`due_date`, `labels`, board `labels`) | B14, B15 (backend), F14, F15 (UI).                                             |
-| 27 `GET /api/boards/{id}/labels`             | B15. F15 (`LabelManager`, `LabelPicker`). F16 reads the labels from route 6.   |
-| 28 `POST /api/boards/{id}/labels`            | B15. F15. E3.                                                                  |
-| 29 `PATCH /api/labels/{id}`                  | B15. F15.                                                                      |
-| 30 `DELETE /api/labels/{id}`                 | B15. F15.                                                                      |
-| 31 `PUT /api/v1/cards/{id}/labels`           | B15. F15. E3.                                                                  |
-| Board filter (no route)                      | F16. E4.                                                                       |
-| Extra alias URLs (design section 5.3)        | P1 removes them.                                                               |
-| Page `/`                                     | F2.                                                                            |
-| Page `/login`                                | No change. F1 changes how `AuthContext.login` sends the request.               |
-| Page `/register`                             | No change. Tests exist for the backend. A frontend payload test comes from C1. |
-| Page `/boards/[id]`                          | F4 to F9, F11.                                                                 |
-| Page `/profile`                              | F3 (guard), F10.                                                               |
-| Page `/my-tasks`                             | F12 (kept by decision D8, see F12).                                            |
+| Route / page                                 | Task or note                                                                                                                     |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 1 `POST /api/auth/register`                  | No change. Tests exist. C1 adds a payload contract test. P1 moves the prefix.                                                    |
+| 2 `POST /api/auth/login`                     | B7, B12, P7. P1 moves the prefix.                                                                                                |
+| 3 `GET /api/health`                          | No change. Tests exist.                                                                                                          |
+| 4 `POST /api/boards`                         | B9, B10. F2 builds the UI.                                                                                                       |
+| 5 `GET /api/boards`                          | No change. B10 adds isolation tests.                                                                                             |
+| 6 `GET /api/boards/{id}`                     | B1 (response change), B11.                                                                                                       |
+| 7 `PATCH /api/boards/{id}`                   | B9, B10. F9 builds the UI.                                                                                                       |
+| 8 `DELETE /api/boards/{id}`                  | B4. F9 builds the UI.                                                                                                            |
+| 9 `POST /api/boards/{id}/columns`            | B10. F5 builds the UI.                                                                                                           |
+| 10 `PATCH /api/columns/{id}`                 | B10. F5.                                                                                                                         |
+| 11 `DELETE /api/columns/{id}`                | B2. F5.                                                                                                                          |
+| 12 `PATCH /api/boards/{id}/columns/reorder`  | B10. F5.                                                                                                                         |
+| 13 `POST /api/v1/columns/{id}/cards`         | B8. F6.                                                                                                                          |
+| 14 `PATCH /api/v1/cards/{id}`                | B8. F7.                                                                                                                          |
+| 15 `DELETE /api/v1/cards/{id}`               | B3. F7.                                                                                                                          |
+| 16 `PATCH /api/v1/cards/{id}/position`       | B5. F7 (move-to select), F8.                                                                                                     |
+| 17 `GET /api/cards/{id}/comments`            | B3 (deleted cards), F7.                                                                                                          |
+| 18 `POST /api/cards/{id}/comments`           | F7. Tests exist.                                                                                                                 |
+| 19 `PATCH /api/comments/{id}`                | B6. F7.                                                                                                                          |
+| 20 `DELETE /api/comments/{id}`               | B6. F7.                                                                                                                          |
+| 21 `GET /api/users/me`                       | B10. F10.                                                                                                                        |
+| 22 `PATCH /api/users/me`                     | B10. F10.                                                                                                                        |
+| 23 `GET /api/notifications`                  | B10 (tests only). No UI change (F13).                                                                                            |
+| 24 `PATCH /api/notifications/{id}/read`      | B10 (tests only). No UI change (F13).                                                                                            |
+| 25 `GET /api/analytics/boards/{id}/summary`  | B10 (tests only). No UI (D11).                                                                                                   |
+| 26 `GET /api/v1/cards` (added, D8 and D13)   | B13. F11 (search), F12 (My Tasks).                                                                                               |
+| 13, 14, 16 (due date field)                  | B14 (backend), F14 (UI), E2.                                                                                                     |
+| 6, 26 (`due_date`, `labels`, board `labels`) | B14, B15 (backend), F14, F15 (UI).                                                                                               |
+| 27 `GET /api/boards/{id}/labels`             | B15. F15 (`LabelManager`, `LabelPicker`). F16 reads the labels from route 6.                                                     |
+| 28 `POST /api/boards/{id}/labels`            | B15. F15. E3.                                                                                                                    |
+| 29 `PATCH /api/labels/{id}`                  | B15. F15.                                                                                                                        |
+| 30 `DELETE /api/labels/{id}`                 | B15. F15.                                                                                                                        |
+| 31 `PUT /api/v1/cards/{id}/labels`           | B15. F15. E3.                                                                                                                    |
+| Board filter (no route)                      | F16. E4.                                                                                                                         |
+| Extra alias URLs (design section 5.3)        | P1 removes them.                                                                                                                 |
+| Page `/`                                     | F2.                                                                                                                              |
+| Page `/login`                                | AU1 (auth route group, `AuthBackground`), AU2 (password toggle, register link).                                                  |
+| Page `/register`                             | AU1 (auth route group). AU3 (password toggle, sign-in link). Tests exist for the backend. A frontend payload test comes from C1. |
+| Page `/boards/[id]`                          | F4 to F9, F11.                                                                                                                   |
+| Page `/profile`                              | F3 (guard), F10.                                                                                                                 |
+| Page `/my-tasks`                             | F12 (kept by decision D8, see F12).                                                                                              |
+| Page `/inbox`                                | NP1. E5. Backend: routes 23 and 24.                                                                                              |
+| Page `/notes`                                | NP2. E6. No backend route (localStorage only).                                                                                   |
+| Page `/reports`                              | NP3. E7. Backend: `GET /api/v1/workspace/summary` (BK1).                                                                         |
+| `GET /api/v1/workspace/summary`              | BK1. NP3 (UI).                                                                                                                   |
+| Board background picker (no route)           | BF2 (`BackgroundPicker.tsx`, `hooks/useBoardBg.ts`, `lib/board-backgrounds.ts`).                                                 |
 
 ## 5. Notes
 
@@ -453,6 +458,24 @@ Added from docs-sync investigation. All items below were confirmed implemented i
 
 - [x] **SN2. WorkspaceSwitcher component** (S). Done.
   - Description: workspace stats popup in the sidebar (placeholder state — "not available yet").
+
+- [x] **SN3. Sidebar create-board modal** (S). Done.
+  - Description: `+` icon on Favorites and Projects sections in the sidebar opens a create-board modal so users can create a board without navigating to `/`.
+  - Files: `frontend/components/shared/Sidebar.tsx`, `frontend/components/shared/sidebar/SidebarNav.tsx`.
+
+#### Auth Page and Login Improvements
+
+- [x] **AU1. Auth route group with AuthBackground** (S). Done.
+  - Description: login and register pages moved into `app/(auth)/` route group. `app/(auth)/layout.tsx` provides `AuthBackground` component (mint-green diagonal gradient matching the board background).
+  - Files: `frontend/app/(auth)/layout.tsx`, `frontend/components/auth/AuthBackground.tsx`.
+
+- [x] **AU2. Login page improvements** (S). Done.
+  - Description: password visibility toggle (eye icon, `BaseButton`), "Don't have an account? Register" link, improved error display with `role="alert"`.
+  - File: `frontend/app/(auth)/login/page.tsx`.
+
+- [x] **AU3. Register page improvements** (S). Done.
+  - Description: password visibility toggle, "Already have an account? Sign in" link.
+  - File: `frontend/app/(auth)/register/page.tsx`.
 
 #### E2E Tests (new)
 

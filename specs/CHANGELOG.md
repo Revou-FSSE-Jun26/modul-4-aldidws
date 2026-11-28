@@ -13,6 +13,8 @@ This changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 - Specifications rewritten for the Kanban product (see Refinement 1, 2026-11-24). Documentation only.
 - Kanban UI built on the backend (board read, card list and search, notifications producer, card soft delete, column delete 409) and the frontend (create board, columns, cards, drag and drop, card dialog with comments, search, bell, My Tasks, Profile, header). Decisions D6, D8 and D13 changed (Refinements 2 to 6). Not committed yet.
+- Due dates, board labels and board filter added (Refinements 7–10, 2026-11-24 to 2026-11-25). Three backend migrations, 25 new acceptance criteria, 325 backend tests, 339 frontend tests, 26 Playwright tests. Not committed yet.
+- Stage 2 — Kanban features and UI design system (Refinement 11, 2026-11-25): 3 backend migrations; workspace summary and column reorder validation endpoints; board favorites, list view, import/export, sort/group; column colour and is_done flag; board members and card assignees; 4-phase design system (tokens, Inter, sidebar shell, background picker); auth route group with `AuthBackground`; login/register improvements; `/notes`, `/inbox`, `/reports` placeholder pages; sidebar nav extended. Not committed yet.
 
 ---
 
@@ -279,6 +281,64 @@ Each entry records a change to the specifications in `specs/`: **Context -> Befo
 
 ---
 
+### Refinement 8 — 2026-11-28: Final documentation sync — all features marked complete
+
+**Summary:**
+This entry documents the final documentation sync performed after the project was confirmed as complete. All implemented features, pages, and acceptance criteria have been recorded in `specs/` and `docs/`.
+
+**New pages added to specs:**
+
+- R19: Personal Notes — `/notes` page (localStorage, no backend)
+- R20: Notifications Inbox — `/inbox` page (paginated, mark-read, `?item=` deep link)
+- R21: Reports / Analytics Dashboard — `/reports` page (workspace stats, completion ring)
+
+**Previously undocumented features now documented:**
+
+1. Board favorites (`is_favorite` field, sidebar Favorites section) — R22
+2. Board background picker (`BackgroundPicker.tsx`, `lib/board-backgrounds.ts`, localStorage) — R23
+3. Board list view (`BoardListView.tsx`, view toggle Kanban/List/Calendar) — R24
+4. Board import/export (`lib/boardImportExport.ts`, JSON download/upload) — R25
+5. Card sort controls (`lib/sortCards.ts`, 5 sort modes) — R26
+6. Card group-by-priority (`lib/groupCards.ts`) — R26
+7. Column color field (`board_columns.color`, 5 colors, `lib/columnColor.ts`) — R27
+8. Column `is_done` flag (`board_columns.is_done`, used by Reports and import/export) — R27
+9. Workspace Summary API (`GET /api/v1/workspace/summary`) — R28
+10. `WorkspaceSwitcher` component (placeholder, sidebar stats popup)
+11. `members` blueprint (`blueprints/members/`, invite/list/remove)
+12. `labels` blueprint (`blueprints/labels/`, CRUD routes)
+
+**Acceptance criteria updated from Plan/BE/Partial to Done:**
+Approximately 25 acceptance criteria across R1–R7, R15–R17 were updated from `[Plan]` or `[BE]` to `[Done]`. See `requirements.md` for the full list.
+
+**New E2E test files created:**
+7 new E2E test files created to cover previously uncovered workflows:
+
+1. `e2e/tests/inbox.spec.ts` — inbox page workflows (`InboxPage` page object)
+2. `e2e/tests/notes.spec.ts` — notes page workflows (`NotesPage` page object)
+3. `e2e/tests/reports.spec.ts` — reports/analytics workflows (`ReportsPage` page object)
+4. `e2e/tests/board-favorites.spec.ts` — favorite/unfavorite boards
+5. `e2e/tests/board-import-export.spec.ts` — export and import board JSON
+6. `e2e/tests/card-sort-group.spec.ts` — card sorting and grouping
+7. `e2e/tests/board-list-view.spec.ts` — toggle between grid and list view
+
+**New ADRs created:**
+
+- `docs/adr/0001-modular-monolith.md`
+- `docs/adr/0002-authentication-strategy.md`
+- `docs/adr/0003-board-search-client-side.md`
+- `docs/adr/0004-board-background-storage.md`
+- `docs/adr/0005-board-import-export-format.md`
+
+**Evidence:**
+
+- Backend test files: 28
+- E2E spec files: 10 existing + 7 new = 17 total
+- E2E page objects: 6 existing + 3 new = 9 total
+- Frontend pages: 9 (6 previously documented + 3 new)
+- Backend blueprints: 10 (auth, boards, columns, cards, comments, labels, members, notifications, analytics, users)
+
+---
+
 ### Refinement 1: Task/Project specification replaced by a Kanban specification (2026-11-24)
 
 **Context / Problem:**
@@ -476,17 +536,17 @@ Refinements 2 to 6 come from building the Kanban UI (2026-11-24). They are in th
 
 **After (measured locally, final run):**
 
-| Check | Result |
-| --- | --- |
-| `pytest` from `backend/` (`APP_ENV=testing`, local `revotask_test`) | 325 passed, 0 skipped (includes 2 migration tests on temporary databases) |
-| `npx jest` | 339 tests in 39 suites passed |
-| `npx tsc --noEmit` (frontend and `e2e/tsconfig.json`) | exit 0 |
-| `npm run lint` | 0 errors, 1 warning (unused `fireEvent` in `BoardCard.test.tsx`, existed before) |
-| `npm run build` (`NEXT_PUBLIC_API_BASE_URL=https://example.up.railway.app`) | exit 0 |
-| `npm run e2e` against local Flask (5000) and `next start` (3000), database `revotask_e2e` | 26 passed (chromium and mobile), no retries; the baseline was 18 |
-| Migrations `e75e73442f21`, `421f6e5e8ae5`, `43535c2f36bf` on throw-away databases | upgrade, downgrade, upgrade passed; `flask db migrate` reported no changes |
-| Query count of the board read | 5 SELECTs for three data sizes (including 200 labels); `GET /api/v1/cards` 3 SELECTs |
-| Label colour contrast (8 pairs) | 6.38 to 11.86, all at least 4.5 |
+| Check                                                                                     | Result                                                                               |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `pytest` from `backend/` (`APP_ENV=testing`, local `revotask_test`)                       | 325 passed, 0 skipped (includes 2 migration tests on temporary databases)            |
+| `npx jest`                                                                                | 339 tests in 39 suites passed                                                        |
+| `npx tsc --noEmit` (frontend and `e2e/tsconfig.json`)                                     | exit 0                                                                               |
+| `npm run lint`                                                                            | 0 errors, 1 warning (unused `fireEvent` in `BoardCard.test.tsx`, existed before)     |
+| `npm run build` (`NEXT_PUBLIC_API_BASE_URL=https://example.up.railway.app`)               | exit 0                                                                               |
+| `npm run e2e` against local Flask (5000) and `next start` (3000), database `revotask_e2e` | 26 passed (chromium and mobile), no retries; the baseline was 18                     |
+| Migrations `e75e73442f21`, `421f6e5e8ae5`, `43535c2f36bf` on throw-away databases         | upgrade, downgrade, upgrade passed; `flask db migrate` reported no changes           |
+| Query count of the board read                                                             | 5 SELECTs for three data sizes (including 200 labels); `GET /api/v1/cards` 3 SELECTs |
+| Label colour contrast (8 pairs)                                                           | 6.38 to 11.86, all at least 4.5                                                      |
 
 New e2e coverage: `board-filter.spec.ts` (3 tests: keyword and label filter with "x of y" and Clear, empty status message, filters in the URL applied when the board opens), a 375 px test in `mobile.spec.ts` with the filter bar open (no horizontal overflow), plus `due-dates.spec.ts` and `labels.spec.ts` from earlier phases. Guard searches found no `waitForTimeout`, no hex value in `frontend/components` and no token in `localStorage` or `sessionStorage` (only tests assert they stay empty).
 
@@ -495,6 +555,78 @@ New e2e coverage: `board-filter.spec.ts` (3 tests: keyword and label filter with
 - The production migration (Railway `flask db upgrade`) was not run.
 - The login redirect keeps only the path, so active board filters are lost after a reload. The first E4 plan assumed the query survives a reload. The e2e test therefore opens a link that already contains `?q=` through `/login?next=`. Keeping the query on the redirect would change behaviour and is left to the product owner.
 - GitHub Actions e2e was not run.
+
+### Refinement 11: Stage 2 — Kanban features and UI design system (2026-11-25)
+
+**Context:** After Refinements 2–10 (Kanban UI, due dates, labels, board filter), a second stage of work was performed in the working tree. It covered: three new backend migrations; two new backend endpoints; five front-end feature groups (A–D plus design-system phases 1–4); a redesigned auth page; and miscellaneous fixes. No task commits or pushes occurred. All work remains in the working tree.
+
+**Backend migrations (3):**
+
+| Migration                    | Column / table added                                                                                                                                                                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `add_cards_due_date`         | `cards.due_date` nullable `timestamp with time zone`                                                                                                                                                                                       |
+| `add_labels_and_card_labels` | `labels` table, `card_labels` join table                                                                                                                                                                                                   |
+| `add_kanban_stage2`          | `boards.is_favorite` boolean default false; `board_columns.color` varchar(16) default gray; `board_columns.is_done` boolean default false; `cards.priority` nullable varchar(16) with check; `board_members` table; `card_assignees` table |
+
+All three migrations have working downgrades. `flask db migrate` reports no pending difference after the last migration.
+
+**New backend endpoints:**
+
+- `GET /api/v1/workspace/summary` — returns `workspace_name`, `projects` (board count), `tasks` (live card count), `members` (always 1 until board sharing is used). Authenticated. Test: `backend/tests/api/test_workspace_summary.py`.
+- Column reorder validation — `PATCH /api/boards/{board_id}/columns/reorder` now rejects a list that does not contain exactly the board's columns (not just a subset) and returns 400 `VALIDATION_ERROR`. Test extended in `test_column_routes.py`.
+
+**Frontend kanban features:**
+
+| Group                       | Description                                                                                                                                                                                                                                                                                                    | Key files                                                                                                                                            |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1–A5 (Board enhancements)  | Board favorites (star toggle, sidebar Favorites section); board list view (Kanban/List/Calendar toggle); board import/export JSON; `AddNewSplitButton`; `DashboardGuide` first-use card                                                                                                                        | `components/board/{BoardListView,AddNewSplitButton,DashboardGuide}.tsx`, `lib/boardImportExport.ts`, `lib/services/boardsService.ts` (`setFavorite`) |
+| B1–B6 (Card enhancements)   | Card sort (Manual/Due/Priority/Created/Title); card group-by-priority; card duplicate; card sort controls in `BoardDetailView`                                                                                                                                                                                 | `lib/{sortCards,groupCards}.ts`, `BoardDetailView.tsx`                                                                                               |
+| C1–C7 (Column enhancements) | Column colour chip (gray/blue/orange/green/red, cycles on click, stored in backend); column is_done toggle ("Mark as Done column"); column `+` button creates card at top                                                                                                                                      | `lib/columnColor.ts`, `ColumnHeader.tsx`, `BoardColumn.tsx`                                                                                          |
+| D1–D7 (Collaboration)       | `board_members` backend routes (invite, list, remove); `BoardMembersPanel` frontend; card assignees (`PUT /api/v1/cards/{id}/assignees`); assignee multi-select in `CardDetailModal`; `WorkspaceSwitcher` placeholder; `GET /api/boards/{id}/members` and `GET /api/boards/{id}/labels` returned in board read | `blueprints/members/`, `blueprints/labels/`, `components/board/BoardMembersPanel.tsx`, `CardDetailModal.tsx`                                         |
+
+**Design system (phases 1–4):**
+
+| Phase                            | Scope                                                                                                                                                                                                                                                                                                                                                                 | Key changes                                                                                                   |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Phase 1: tokens and font         | CSS variable token system; switch from Geist to Inter via `next/font`; `--bg-page`, `--brand`, `--radius-*`, `--shadow-*` and all §2 tokens in `globals.css`                                                                                                                                                                                                          | `app/globals.css`, `app/layout.tsx`                                                                           |
+| Phase 2: sidebar and board shell | Sidebar full styling; `AppShell` layout (sidebar + `MobileBottomNav`); board header row; toolbar (`FilterBar` view tabs)                                                                                                                                                                                                                                              | `Sidebar.tsx`, `AppShell.tsx`, `BoardDetailView.tsx`                                                          |
+| Phase 3: cards and responsive    | `BoardCard` meta row; `ColumnHeader` status pill; `BaseBadge` and `BaseButton` token-based; 375 px / 768 px / 1280 px breakpoints verified; no horizontal overflow                                                                                                                                                                                                    | `BoardCard.tsx`, `ColumnHeader.tsx`, `BaseButton.tsx`, `BaseBadge.tsx`                                        |
+| Phase 4: background picker       | `BackgroundPicker.tsx` (6 mint-green gradient swatches, popover desktop / bottom-sheet mobile, `role="radiogroup"`, keyboard nav, ring-on-selected); `hooks/useBoardBg.ts` (localStorage per board, `data-board-bg` on wrapper); `lib/board-backgrounds.ts` (id, name, dark/light colour triplets); CSS variables in `globals.css`; `BoardBgWrapper` applies gradient | `components/board/BackgroundPicker.tsx`, `hooks/useBoardBg.ts`, `lib/board-backgrounds.ts`, `app/globals.css` |
+
+**Auth page:**
+
+- Login and register pages moved into `app/(auth)/` route group with shared `app/(auth)/layout.tsx` providing `AuthBackground` (mint-green gradient consistent with the board background).
+- Login page gains: password visibility toggle (`BaseButton` icon), "Don't have an account? Register" link, improved error display with `role="alert"`.
+- Register page gains: password visibility toggle, "Already have an account? Sign in" link.
+
+**New placeholder pages (notes / inbox / reports):**
+
+| Route      | File                   | Description                                                                                                                |
+| ---------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `/notes`   | `app/notes/page.tsx`   | Personal notes in localStorage (create, pin, edit, delete, search). No backend.                                            |
+| `/inbox`   | `app/inbox/page.tsx`   | Paginated notifications with mark-as-read, mark-all-read, unread filter, `?item=` deep link.                               |
+| `/reports` | `app/reports/page.tsx` | Workspace stats dashboard: stat tiles, completion ring, health bar, Refresh button. Calls `GET /api/v1/workspace/summary`. |
+
+Sidebar navigation extended (`SidebarNav.tsx`, `sidebar/constants.ts`) to include links for `/notes`, `/inbox`, `/reports`. Sidebar create-board modal added so users can create a board without navigating away from any page.
+
+**Misc fixes:**
+
+- `RevoTask Task Management` brand text removed from sidebar top.
+- Menu items Notes, Inbox, and Reports in the sidebar are functional (navigate to their pages).
+- `+` icon on Favorites and Projects sections in the sidebar opens the create-board modal.
+- `AppShell` empty-space issue beside sidebar resolved (layout fills the full viewport width).
+- Column `...` menu changed to `position: fixed` under its trigger to avoid clipping by `overflow-x-auto` board container.
+
+**Evidence:**
+
+| Check                                 | Result                                    |
+| ------------------------------------- | ----------------------------------------- |
+| `pytest` (backend, `APP_ENV=testing`) | 325 passed, 0 skipped                     |
+| `npx jest` (frontend)                 | 339 tests in 39 suites passed             |
+| `npx tsc --noEmit`                    | exit 0                                    |
+| `npm run lint`                        | 0 errors                                  |
+| `npm run build`                       | exit 0                                    |
+| Local Playwright (`npm run e2e`)      | 26 passed (chromium + mobile), no retries |
 
 ---
 

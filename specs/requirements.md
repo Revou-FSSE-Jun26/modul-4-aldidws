@@ -64,9 +64,21 @@ A criterion tagged `[Plan]` that depends on a pending decision says `Assumption 
 | R12 | Data persistence and integrity                  | Done except two gaps Planned                                              |
 | R13 | Analytics                                       | Backend only, no MVP UI                                                   |
 | R14 | Notifications                                   | Backend only, no producer, no MVP UI                                      |
-| R15 | Card due dates                                  | Planned (kanban-features phase 1)                                         |
-| R16 | Board labels                                    | Planned (kanban-features phase 2)                                         |
-| R17 | Board filter                                    | Planned (kanban-features phase 3)                                         |
+| R15 | Card due dates                                  | Done (phase 1)                                                            |
+| R16 | Board labels                                    | Done (phase 2)                                                            |
+| R17 | Board filter                                    | Done (phase 3)                                                            |
+| R18 | Board members and card assignees                | Done                                                                      |
+| R19 | Personal Notes (`/notes`)                       | Done — client-side only                                                   |
+| R20 | Notifications Inbox Page (`/inbox`)             | Done                                                                      |
+| R21 | Reports / Analytics Dashboard (`/reports`)      | Done                                                                      |
+| R22 | Board Favorites                                 | Done                                                                      |
+| R23 | Board Background Picker                         | Done — client-side only                                                   |
+| R24 | Board List View                                 | Done                                                                      |
+| R25 | Board Import / Export                           | Done                                                                      |
+| R26 | Card Sort and Group                             | Done                                                                      |
+| R27 | Column Colour and Done Flag                     | Done                                                                      |
+| R28 | Workspace Summary API                           | Done                                                                      |
+| R29 | Auth Page Layout and Login / Register UX        | Done                                                                      |
 
 ## 5. Functional requirements
 
@@ -641,3 +653,17 @@ The product owner chose the three features and their order ("mulai dari tanggal 
 
 - **R28.1** `GET /api/v1/workspace/summary` returns `workspace_name`, `projects` (board count), `tasks` (card count), and `members` count. `[Done]`
 - **R28.2** The endpoint requires authentication and returns only data accessible to the requesting user. `[Done]`
+
+### Requirement 29: Auth Page Layout and Login / Register UX
+
+**Description:** The login and register pages share a visually consistent background and have improved usability controls.
+
+#### Acceptance criteria
+
+- **R29.1** The login and register pages are grouped under the Next.js `(auth)` route group (`app/(auth)/`) with a shared layout that renders `AuthBackground`. `[Done]`
+- **R29.2** `AuthBackground` renders the same mint-green diagonal gradient used by the board background (CSS variables `--board-from`, `--board-to`), so the auth pages are visually consistent with the board. `[Done]`
+- **R29.3** The login page shows a password visibility toggle button that switches the `<input type>` between `password` and `text`. The button uses `BaseButton` and has an accessible label ("Show password" / "Hide password"). `[Done]`
+- **R29.4** The login page shows a "Don't have an account? Register" link that navigates to `/register`. `[Done]`
+- **R29.5** The register page shows a password visibility toggle with the same behaviour as R29.3. `[Done]`
+- **R29.6** The register page shows an "Already have an account? Sign in" link that navigates to `/login`. `[Done]`
+- **R29.7** Login and register form submission errors are displayed with `role="alert"` so screen readers announce them. `[Done]`
