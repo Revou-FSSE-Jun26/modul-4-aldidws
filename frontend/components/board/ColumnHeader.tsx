@@ -27,7 +27,7 @@ export interface ColumnHeaderProps {
 
 export interface ColumnReorderHandle {
   columnId: string;
-  onDragStart: (e: React.DragEvent<HTMLElement>) => void;
+  onDragStart: (e: React.DragEvent<HTMLElement>, columnId: string) => void;
   onDragEnd: () => void;
   onMove: (direction: -1 | 1) => void;
 }

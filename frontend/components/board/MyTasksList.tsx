@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { useAuth } from "@/context/AuthContext";
 import { useNow } from "@/hooks/useNow";
 import { createCard, listCards } from "@/lib/services/cardsService";
 import { getBoard, listBoards } from "@/lib/services/boardsService";
@@ -124,7 +125,8 @@ function isDoneColumn(columnName?: string): boolean {
 export function MyTasksList() {
   const router = useRouter();
   const pathname = usePathname();
-  const { token, isAuthLoading, user } = useRequireAuth();
+  const { token, isAuthLoading } = useRequireAuth();
+  const { currentUser: user } = useAuth();
   useNow();
 
   const searchInputRef = useRef<HTMLInputElement>(null);

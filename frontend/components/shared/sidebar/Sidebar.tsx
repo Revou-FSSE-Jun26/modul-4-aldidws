@@ -10,14 +10,15 @@ import {
   Grid2X2,
   Plus,
   Star,
-  LogOut,
   X,
   Loader2,
+  UserRound,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { useAuth } from "@/context/AuthContext";
 import { SidebarNav } from "./SidebarNav";
+import { ActionMenu } from "@/components/shared/ActionMenu";
 
 import { get } from "@/lib/apiClient";
 import { apiPaths } from "@/lib/apiPaths";
@@ -30,9 +31,21 @@ import {
 
 import type { Board, WorkspaceSummary } from "@/lib/types/api";
 
-interface SidebarProps {
-  collapsed: boolean;
-  onToggle: () => void;
+const COLLAPSED_KEY = "sidebar-collapsed";
+
+function readCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  const stored = window.localStorage.getItem(COLLAPSED_KEY);
+  if (stored === "true") return true;
+  if (stored === "false") return false;
+  return false;
+}
+
+// Props are optional for backward-compat; Sidebar manages its own state internally.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface SidebarProps {
+  collapsed?: boolean;
+  onToggle?: () => void;
 }
 
 export function LeafRLogo({ size = 28 }: { size?: number }) {
@@ -64,9 +77,26 @@ export function LeafRLogo({ size = 28 }: { size?: number }) {
   );
 }
 
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+export function Sidebar(_props: SidebarProps) {
   const router = useRouter();
   const { currentUser, token, logout } = useAuth();
+
+  // Internal collapsed state — read from localStorage on mount.
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    setCollapsed(readCollapsed());
+  }, []);
+
+  function handleToggle() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(COLLAPSED_KEY, String(next));
+      }
+      return next;
+    });
+  }
 
   const [boards, setBoards] = useState<Board[]>([]);
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null);
@@ -247,9 +277,23 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     }
   }
 
+  const userMenuItems = [
+    {
+      id: "profile",
+      label: "Profile",
+      onSelect: () => router.push("/profile"),
+    },
+    {
+      id: "sign-out",
+      label: "Sign out",
+      onSelect: () => void handleSignOut(),
+    },
+  ];
+
   return (
     <>
       <aside
+        data-collapsed={collapsed ? "true" : "false"}
         className={[
           "fixed inset-y-0 left-0 z-40 hidden flex-col md:flex",
           "border-r border-[#31594C]",
@@ -290,9 +334,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
           <button
             type="button"
-            onClick={onToggle}
-            aria-label={collapsed ? "Expand sidebar" : "Minimize sidebar"}
-            title={collapsed ? "Expand sidebar" : "Minimize sidebar"}
+            onClick={handleToggle}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-white transition-colors hover:bg-[#285346] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DCEBC0]"
           >
             {collapsed ? (
@@ -421,21 +465,23 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
 
           {!collapsed && (
-            <div className="space-y-1">
+            <ul className="space-y-1">
               {loadingBoards ? (
-                <div className="flex justify-center py-3">
+                <li className="flex justify-center py-3">
                   <Loader2
                     size={14}
                     className="animate-spin text-white"
                   />
-                </div>
+                </li>
               ) : favoriteBoards.length === 0 ? (
-                <p className="px-[10px] text-[10px] leading-relaxed text-white/80">
-                  Star a board to pin it here.
-                </p>
+                <li>
+                  <p className="px-[10px] text-[10px] leading-relaxed text-white/80">
+                    Star a board to pin it here.
+                  </p>
+                </li>
               ) : (
                 favoriteBoards.map((board) => (
-                  <div
+                  <li
                     key={board.id}
                     className="group flex items-center justify-between rounded-md px-[10px] py-2 text-white transition-colors hover:bg-[#285346] hover:text-white"
                   >
@@ -454,7 +500,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                       type="button"
                       onClick={() => void handleToggleFavorite(board)}
                       disabled={updatingFavorites.includes(board.id)}
-                      aria-label={`Remove ${board.name} from favorites`}
+                      aria-label="Remove from favorites"
                       title="Remove from favorites"
                       className="shrink-0 cursor-pointer text-[#DCEBC0] transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -464,10 +510,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                         <Star size={12} fill="currentColor" />
                       )}
                     </button>
-                  </div>
+                  </li>
                 ))
               )}
-            </div>
+            </ul>
           )}
         </section>
 
@@ -521,9 +567,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               No boards yet. Click + to create one.
             </p>
           ) : (
-            <div className="space-y-1">
+            <ul className="space-y-1">
               {boards.map((board) => (
-                <div
+                <li
                   key={board.id}
                   className="group flex items-center justify-between rounded-md px-[10px] py-2 text-[11px] text-white transition-colors hover:bg-[#285346] hover:text-white"
                 >
@@ -542,8 +588,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     disabled={updatingFavorites.includes(board.id)}
                     aria-label={
                       board.is_favorite
-                        ? `Remove ${board.name} from favorites`
-                        : `Add ${board.name} to favorites`
+                        ? "Remove from favorites"
+                        : "Add to favorites"
                     }
                     title={
                       board.is_favorite
@@ -566,45 +612,40 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                       />
                     )}
                   </button>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </section>
 
-        <div className="mt-auto border-t border-[#31594C] px-3 py-4 text-white">
-          <div
-            className={[
-              "flex w-full items-center",
-              collapsed ? "justify-center" : "justify-between",
-            ].join(" ")}
-          >
-            {!collapsed && (
-              <Link
-                href="/profile"
-                className="min-w-0 flex-1 rounded-md py-0.5 text-left text-white transition-colors hover:text-white"
-                title="View profile"
-              >
-                <p className="truncate text-[11px] font-medium text-white">
-                  {currentUser?.name || "User"}
-                </p>
-                <p className="mt-1 truncate text-[9px] text-white/80">
-                  {currentUser?.email || ""}
-                </p>
-              </Link>
-            )}
-
-            <button
-              type="button"
-              onClick={() => void handleSignOut()}
-              aria-label="Sign out"
-              title="Sign out"
-              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-white transition-colors hover:bg-[#285346] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DCEBC0]"
+        {currentUser && (
+          <div className="mt-auto border-t border-[#31594C] px-3 py-4 text-white">
+            <div
+              className={[
+                "flex w-full items-center gap-2",
+                collapsed ? "justify-center" : "justify-between",
+              ].join(" ")}
             >
-              <LogOut size={16} strokeWidth={1.8} />
-            </button>
+              {!collapsed && (
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11px] font-medium text-white">
+                    {currentUser.name || "User"}
+                  </p>
+                  <p className="mt-1 truncate text-[9px] text-white/80">
+                    {currentUser.email || ""}
+                  </p>
+                </div>
+              )}
+
+              <ActionMenu
+                label={`User menu for ${currentUser.name || "User"}`}
+                items={userMenuItems}
+                symbolNode={<UserRound size={15} strokeWidth={1.8} />}
+                triggerClassName="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-white transition-colors hover:bg-[#285346] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DCEBC0]"
+              />
+            </div>
           </div>
-        </div>
+        )}
       </aside>
 
       {createOpen && (

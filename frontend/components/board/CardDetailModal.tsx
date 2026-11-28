@@ -256,7 +256,7 @@ function EditCardForm({
       const normalizedDescription = description.trim();
       const updated = await updateCard(token, card.id, {
         title: trimmedTitle,
-        description: normalizedDescription.length > 0 ? normalizedDescription : null,
+        description: normalizedDescription.length > 0 ? normalizedDescription : undefined,
       });
       onSaved({
         ...card,

@@ -55,19 +55,20 @@ describe("D1 — Sidebar collapse", () => {
   });
 
   it("renders expanded by default (data-collapsed=false)", () => {
-    const { container } = render(<Sidebar />);
+    const { container } = render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     const aside = container.querySelector("aside");
     expect(aside).toHaveAttribute("data-collapsed", "false");
   });
 
   it("toggle button has aria-label 'Collapse sidebar' when expanded", () => {
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeInTheDocument();
   });
 
   it("clicking toggle sets data-collapsed=true and updates aria-label", async () => {
     const user = userEvent.setup();
-    const { container } = render(<Sidebar />);
+    const onToggle = jest.fn();
+    const { container } = render(<Sidebar collapsed={false} onToggle={onToggle} />);
     await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
     expect(container.querySelector("aside")).toHaveAttribute("data-collapsed", "true");
     expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeInTheDocument();
@@ -75,20 +76,20 @@ describe("D1 — Sidebar collapse", () => {
 
   it("persists collapsed state to localStorage", async () => {
     const user = userEvent.setup();
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
     expect(localStorage.getItem("sidebar-collapsed")).toBe("true");
   });
 
   it("reads collapsed=true from localStorage on mount", () => {
     localStorage.setItem("sidebar-collapsed", "true");
-    const { container } = render(<Sidebar />);
+    const { container } = render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     expect(container.querySelector("aside")).toHaveAttribute("data-collapsed", "true");
   });
 
   it("reads collapsed=false from localStorage on mount", () => {
     localStorage.setItem("sidebar-collapsed", "false");
-    const { container } = render(<Sidebar />);
+    const { container } = render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     expect(container.querySelector("aside")).toHaveAttribute("data-collapsed", "false");
   });
 });
@@ -106,27 +107,27 @@ describe("D2 — Nav links", () => {
 
   it("active link has aria-current=page when on /my-tasks", () => {
     mockUsePathname.mockReturnValue("/my-tasks");
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     expect(screen.getByRole("link", { name: "My Tasks" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Dashboard" })).not.toHaveAttribute("aria-current");
   });
 
   it("active link has aria-current=page when on /", () => {
     mockUsePathname.mockReturnValue("/");
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "My Tasks" })).not.toHaveAttribute("aria-current");
   });
 
   it("active link has aria-current=page when on /profile", () => {
     mockUsePathname.mockReturnValue("/profile");
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     expect(screen.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "page");
   });
 
   it("Notes, Inbox, and Reports are active nav links", () => {
     mockUsePathname.mockReturnValue("/");
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     const active = ["Notes", "Inbox", "Reports"];
     for (const label of active) {
       const el = screen.getByRole("link", { name: label });
@@ -137,7 +138,7 @@ describe("D2 — Nav links", () => {
 
   it("renders real links for Dashboard, My Tasks, Profile", () => {
     mockUsePathname.mockReturnValue("/");
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "My Tasks" })).toHaveAttribute("href", "/my-tasks");
     expect(screen.getByRole("link", { name: "Profile" })).toHaveAttribute("href", "/profile");
@@ -157,7 +158,7 @@ describe("D5 — User row", () => {
 
   it("shows user name and email when expanded", () => {
     setupAuth();
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     expect(screen.getByText("Alice Smith")).toBeInTheDocument();
     expect(screen.getByText("alice@example.com")).toBeInTheDocument();
   });
@@ -165,21 +166,21 @@ describe("D5 — User row", () => {
   it("hides email when collapsed", async () => {
     setupAuth();
     const user = userEvent.setup();
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
     expect(screen.queryByText("alice@example.com")).not.toBeInTheDocument();
   });
 
   it("user menu trigger has aria-label 'User menu for <name>'", () => {
     setupAuth();
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     expect(screen.getByRole("button", { name: "User menu for Alice Smith" })).toBeInTheDocument();
   });
 
   it("user menu contains Profile and Sign out items", async () => {
     setupAuth();
     const user = userEvent.setup();
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     await user.click(screen.getByRole("button", { name: "User menu for Alice Smith" }));
     expect(screen.getByRole("menuitem", { name: "Profile" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Sign out" })).toBeInTheDocument();
@@ -189,7 +190,7 @@ describe("D5 — User row", () => {
     const logout = jest.fn().mockResolvedValue(undefined);
     setupAuth({ logout });
     const user = userEvent.setup();
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     await user.click(screen.getByRole("button", { name: "User menu for Alice Smith" }));
     await user.click(screen.getByRole("menuitem", { name: "Sign out" }));
     expect(logout).toHaveBeenCalledTimes(1);
@@ -197,7 +198,7 @@ describe("D5 — User row", () => {
 
   it("does not render user row when currentUser is null", () => {
     mockUseAuth.mockReturnValue({ currentUser: null, logout: jest.fn() });
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     expect(screen.queryByRole("button", { name: /user menu/i })).not.toBeInTheDocument();
   });
 });

@@ -17,7 +17,7 @@ import { isActive } from "./utils";
 
 const NAV_LINKS: NavLinkDef[] = [
   {
-    label: "Boards",
+    label: "Dashboard",
     href: "/",
     icon: <House size={18} strokeWidth={1.5} aria-hidden="true" />,
   },

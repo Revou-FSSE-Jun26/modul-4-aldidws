@@ -1698,8 +1698,8 @@ export function BoardDetailView({ boardId }: BoardDetailViewProps) {
                 },
                 {
                   id: "sort-due",
-                  label: `${sortBy === "due_date" ? "✓ " : ""}Due date`,
-                  onSelect: () => setSortBy("due_date"),
+                  label: `${sortBy === "due" ? "✓ " : ""}Due date`,
+                  onSelect: () => setSortBy("due"),
                 },
                 {
                   id: "sort-priority",
@@ -1817,7 +1817,6 @@ export function BoardDetailView({ boardId }: BoardDetailViewProps) {
               sortBy={sortBy}
               groupBy={groupBy}
               onOpenCard={(card) => setSelectedCardId(card.id)}
-              onToggleColumnDone={handleToggleColumnDone}
             />
           ) : boardView === "calendar" ? (
             <div className="mx-auto max-w-5xl rounded-2xl border border-[#E6E8E3] bg-white p-2.5 sm:p-4">
@@ -1953,7 +1952,6 @@ export function BoardDetailView({ boardId }: BoardDetailViewProps) {
                         onRename={handleRename}
                         onDelete={handleDeleteColumn}
                         onUpdate={handleUpdateColumn}
-                        onToggleDone={handleToggleColumnDone}
                         onAddCard={handleAddCard}
                         onOpenCard={(card) => setSelectedCardId(card.id)}
                         dragHandlers={dragHandlers}
@@ -1987,7 +1985,6 @@ export function BoardDetailView({ boardId }: BoardDetailViewProps) {
                   onRename={handleRename}
                   onDelete={handleDeleteColumn}
                   onUpdate={handleUpdateColumn}
-                  onToggleDone={handleToggleColumnDone}
                   onAddCard={handleAddCard}
                   onOpenCard={(card) => setSelectedCardId(card.id)}
                   dragHandlers={dragHandlers}

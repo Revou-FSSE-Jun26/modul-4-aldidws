@@ -643,10 +643,10 @@ function NotesContent({
  * delete, search.
  */
 export default function NotesPage() {
-  const { token, isAuthLoading, user } = useRequireAuth();
+  const { token, isAuthLoading } = useRequireAuth();
   const { currentUser } = useAuth();
 
-  const activeUser = currentUser ?? user;
+  const activeUser = currentUser;
   const userId = activeUser?.id ?? "";
   const workspaceLabel =
     activeUser?.name?.trim() ||

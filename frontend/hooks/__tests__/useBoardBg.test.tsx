@@ -3,7 +3,6 @@ import { render, screen, act } from '@testing-library/react';
 import { renderHook } from '@testing-library/react';
 import { useRef } from 'react';
 import { useBoardBg } from '@/hooks/useBoardBg';
-import { BoardBgWrapper, useOptionalBoardBgContext } from '@/components/board/BoardBgWrapper';
 
 describe('useBoardBg', () => {
   beforeEach(() => {
@@ -68,46 +67,3 @@ describe('useBoardBg', () => {
   });
 });
 
-describe('BoardBgWrapper', () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
-  it('applies board-bg class and data-board-bg attribute', () => {
-    const { container } = render(
-      <BoardBgWrapper>
-        <p>content</p>
-      </BoardBgWrapper>,
-    );
-    const el = container.firstChild as HTMLElement;
-    expect(el.classList.contains('board-bg')).toBe(true);
-    expect(el).toHaveAttribute('data-board-bg', 'mint');
-  });
-
-  it('exposes bgId and setBgId through the context', () => {
-    let ctxValue: ReturnType<typeof useOptionalBoardBgContext> = null;
-    function Child() {
-      ctxValue = useOptionalBoardBgContext();
-      return null;
-    }
-    render(
-      <BoardBgWrapper boardId="b-2">
-        <Child />
-      </BoardBgWrapper>,
-    );
-    expect(ctxValue).not.toBeNull();
-    expect(ctxValue!.bgId).toBe('mint');
-    act(() => ctxValue!.setBgId('teal'));
-    expect(localStorage.getItem('board-bg-b-2')).toBe('teal');
-  });
-
-  it('useOptionalBoardBgContext returns null outside the wrapper', () => {
-    let ctxValue: unknown = 'unset';
-    function Child() {
-      ctxValue = useOptionalBoardBgContext();
-      return null;
-    }
-    render(<Child />);
-    expect(ctxValue).toBeNull();
-  });
-});

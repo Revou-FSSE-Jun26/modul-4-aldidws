@@ -94,7 +94,7 @@ describe("Sidebar — Favorites section (D3)", () => {
     ];
     mockListBoards.mockResolvedValue(boards);
 
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
 
     // Alpha appears in both Favorites and Projects; Beta only in Projects
     await waitFor(() => expect(screen.getAllByText("Alpha")).toHaveLength(2));
@@ -115,7 +115,7 @@ describe("Sidebar — Favorites section (D3)", () => {
     ];
     mockListBoards.mockResolvedValue(boards);
 
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
 
     await waitFor(() => expect(screen.getByText("Beta")).toBeInTheDocument());
 
@@ -131,7 +131,7 @@ describe("Sidebar — Favorites section (D3)", () => {
     mockListBoards.mockResolvedValue(boards);
     mockSetFavorite.mockResolvedValue({ ...boards[0], is_favorite: true });
 
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
 
     const addBtn = screen.getByRole("button", { name: "Add to favorites" });
@@ -147,7 +147,7 @@ describe("Sidebar — Favorites section (D3)", () => {
     mockListBoards.mockResolvedValue(boards);
     mockSetFavorite.mockResolvedValue({ ...boards[0], is_favorite: false });
 
-    render(<Sidebar />);
+    render(<Sidebar collapsed={false} onToggle={jest.fn()} />);
     // Alpha appears in both Favorites and Projects
     await waitFor(() => expect(screen.getAllByText("Alpha")).toHaveLength(2));
 
