@@ -1,6 +1,6 @@
 import { del, getWithMeta, patch, post, put } from "@/lib/apiClient";
 import { apiPaths } from "@/lib/apiPaths";
-import type { Card, CardListItem, Paginated } from "@/lib/types/api";
+import type { Card, CardListItem, CardPriority, Paginated } from "@/lib/types/api";
 
 export function createCard(
   token: string,
@@ -10,7 +10,7 @@ export function createCard(
     description?: string;
     due_date?: string | null;
     /** low, medium or high. Omitted means no priority (null). */
-    priority?: "low" | "medium" | "high";
+    priority?: CardPriority;
     /** Where the new card goes in its column. The server default is "bottom". */
     position?: "top" | "bottom";
   },
@@ -26,7 +26,7 @@ export function updateCard(
     description?: string;
     due_date?: string | null;
     /** Omitted = unchanged; null clears the priority. */
-    priority?: "low" | "medium" | "high" | null;
+    priority?: CardPriority | null;
   },
 ): Promise<Card> {
   return patch<Card>(apiPaths.card(cardId), payload, { token });
