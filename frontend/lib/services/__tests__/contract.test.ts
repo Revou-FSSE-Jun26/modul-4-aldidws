@@ -90,6 +90,8 @@ const drivers: Record<string, Driver> = {
     members.inviteMember(TOKEN, e.pathParams.board_id, e.body.email as string),
   setCardAssignees: (e) =>
     members.setCardAssignees(TOKEN, e.pathParams.card_id, e.body.user_ids as string[]),
+  setFavorite: (e) =>
+    boards.setFavorite(TOKEN, e.pathParams.board_id, e.body.is_favorite as boolean),
 };
 
 describe("frontend request contract", () => {

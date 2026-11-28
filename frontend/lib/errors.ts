@@ -21,7 +21,7 @@ export class ApiError extends Error {
   readonly code: string | undefined;
   /**
    * Structured field-level validation details from the Flask envelope
-   * (`error.details`). Present on 400 Validation responses only.
+   * (`error.details`). Present on validation error responses (400 / 422).
    */
   readonly details: Record<string, string[]> | undefined;
 
@@ -56,7 +56,11 @@ export class ApiError extends Error {
   }
 
   get isValidationError(): boolean {
-    return this.statusCode === 400;
+    return this.statusCode === 400 || this.statusCode === 422;
+  }
+
+  get isRateLimited(): boolean {
+    return this.statusCode === 429;
   }
 
   get isServerError(): boolean {

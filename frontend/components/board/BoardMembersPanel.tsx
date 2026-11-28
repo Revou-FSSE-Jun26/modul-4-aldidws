@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Users } from "lucide-react";
+import { Check, Copy, Users } from "lucide-react";
 import { inviteMember, removeMember } from "@/lib/services/membersService";
 import { showError, showSuccess } from "@/lib/toast";
 import type { BoardMember } from "@/lib/types/api";
@@ -13,10 +13,12 @@ interface BoardMembersPanelProps {
   /** Only the board owner can manage members; others see the read-only list. */
   canManage: boolean;
   onChanged: () => void;
+  /** Optional board URL to copy directly inside the share/members panel. */
+  shareUrl?: string;
 }
 
 /**
- * A collapsible panel that lists every member of a board.  The board owner
+ * A panel that lists every member of a board. The board owner
  * can invite by email (which must be a registered account) and remove
  * members (never the owner row).
  */
@@ -26,9 +28,29 @@ export function BoardMembersPanel({
   members,
   canManage,
   onChanged,
+  shareUrl,
 }: BoardMembersPanelProps) {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const resolvedShareUrl =
+    shareUrl ??
+    (typeof window !== "undefined"
+      ? `${window.location.origin}/boards/${boardId}`
+      : `/boards/${boardId}`);
+
+  async function handleCopyLink() {
+    if (typeof window === "undefined") return;
+    try {
+      await navigator.clipboard.writeText(resolvedShareUrl);
+      setCopied(true);
+      showSuccess("Board link copied.");
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      showError("Could not copy board link.");
+    }
+  }
 
   async function handleInvite(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -40,8 +62,12 @@ export function BoardMembersPanel({
       setEmail("");
       showSuccess("Invitation sent.");
       onChanged();
-    } catch {
-      showError("Could not invite that user.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "Could not invite that user.";
+      showError(message);
     } finally {
       setBusy(false);
     }
@@ -53,8 +79,12 @@ export function BoardMembersPanel({
       await removeMember(token, boardId, userId);
       showSuccess("Member removed.");
       onChanged();
-    } catch {
-      showError("Could not remove that member.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "Could not remove that member.";
+      showError(message);
     } finally {
       setBusy(false);
     }
@@ -62,11 +92,31 @@ export function BoardMembersPanel({
 
   return (
     <div className="rounded-md border border-[var(--border)] bg-[var(--bg-panel)] px-4 py-3">
-      <div className="mb-3 flex items-center gap-2">
-        <Users size={16} strokeWidth={1.5} aria-hidden="true" />
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-          Members ({members.length})
-        </h3>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Users size={16} strokeWidth={1.5} aria-hidden="true" />
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+            Members ({members.length})
+          </h3>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void handleCopyLink()}
+          className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-ctrl)] border border-[var(--border)] bg-[var(--bg-input)] px-2.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
+        >
+          {copied ? (
+            <>
+              <Check size={13} aria-hidden="true" />
+              <span>Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy size={13} aria-hidden="true" />
+              <span>Copy link</span>
+            </>
+          )}
+        </button>
       </div>
 
       <ul className="flex flex-wrap gap-2">
@@ -87,12 +137,13 @@ export function BoardMembersPanel({
             >
               {m.role}
             </span>
-            {canManage && m.role !== "owner" && !busy && (
+            {canManage && m.role !== "owner" && (
               <button
                 type="button"
-                onClick={() => handleRemove(m.user_id)}
+                disabled={busy}
+                onClick={() => void handleRemove(m.user_id)}
                 aria-label={`Remove ${m.name ?? m.email}`}
-                className="text-[var(--text-muted)] transition-colors hover:text-[var(--accent-red)]"
+                className="text-[var(--text-muted)] transition-colors hover:text-[var(--accent-red)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 ×
               </button>
@@ -106,9 +157,10 @@ export function BoardMembersPanel({
           <input
             type="email"
             value={email}
+            disabled={busy}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Invite by email"
-            className="h-8 min-w-0 flex-1 rounded-[var(--radius-ctrl)] border border-[var(--border)] bg-[var(--bg-input)] px-3 text-[13px] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-light)]"
+            className="h-8 min-w-0 flex-1 rounded-[var(--radius-ctrl)] border border-[var(--border)] bg-[var(--bg-input)] px-3 text-[13px] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-light)] disabled:opacity-50"
           />
           <button
             type="submit"

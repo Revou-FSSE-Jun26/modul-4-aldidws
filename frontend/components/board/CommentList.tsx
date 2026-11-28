@@ -100,18 +100,18 @@ function CommentItem({ comment, canModify, onEdit, onDelete }: CommentItemProps)
 
   return (
     <li
-      className="flex flex-col gap-0.5"
+      className="flex flex-col gap-1 rounded-lg border border-[#DCE4D7] bg-[#F4F6EE]/60 px-3.5 py-2.5"
       data-testid="comment-item"
       data-updated-at={comment.updatedAt ?? comment.createdAt}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <span className="flex items-center gap-2 text-xs font-semibold text-foreground">
+        <span className="flex items-center gap-2 text-xs font-semibold text-[#173B30]">
           {comment.authorName}
           {isEdited && <BaseBadge>edited</BaseBadge>}
         </span>
         <time
           dateTime={comment.createdAt}
-          className="shrink-0 text-xs text-muted-foreground"
+          className="shrink-0 text-xs text-[#6F7F75]"
           title={new Date(comment.createdAt).toLocaleString()}
         >
           {formatRelativeTime(comment.createdAt)}
@@ -119,7 +119,7 @@ function CommentItem({ comment, canModify, onEdit, onDelete }: CommentItemProps)
       </div>
 
       {isEditing ? (
-        <form onSubmit={handleSave} noValidate className="flex flex-col gap-2">
+        <form onSubmit={handleSave} noValidate className="mt-1 flex flex-col gap-2">
           <label htmlFor={fieldId} className="sr-only">
             Edit comment text
           </label>
@@ -128,11 +128,12 @@ function CommentItem({ comment, canModify, onEdit, onDelete }: CommentItemProps)
             value={draft}
             rows={3}
             disabled={isBusy}
+            onKeyDown={(e) => e.stopPropagation()}
             onChange={(e) => {
               setDraft(e.target.value);
               if (error) setError(null);
             }}
-            className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="w-full resize-none rounded-lg border border-[#D5DDD0] bg-[#FAF9F6] px-3 py-2 text-sm text-[#173B30] placeholder:text-[#7B8B81] focus:border-[#16382C] focus:bg-white focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           />
           <div className="flex gap-2">
             <BaseButton type="submit" size="sm" disabled={isBusy}>
@@ -154,7 +155,7 @@ function CommentItem({ comment, canModify, onEdit, onDelete }: CommentItemProps)
         </form>
       ) : (
         <>
-          <p className="whitespace-pre-wrap text-sm text-foreground">{comment.body}</p>
+          <p className="whitespace-pre-wrap text-sm text-[#173B30]">{comment.body}</p>
           {canModify && (
             <div className="mt-1 flex gap-2">
               <BaseButton
@@ -182,7 +183,7 @@ function CommentItem({ comment, canModify, onEdit, onDelete }: CommentItemProps)
       )}
 
       {error && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-xs text-[#B34F48]">
           {error}
         </p>
       )}
@@ -206,9 +207,9 @@ export function CommentList({
   return (
     <section aria-label="Comments">
       {comments.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No comments yet.</p>
+        <p className="text-sm text-[#6F7F75]">No comments yet.</p>
       ) : (
-        <ol className="flex flex-col gap-4">
+        <ol className="flex flex-col gap-3">
           {comments.map((comment) => (
             <CommentItem
               key={comment.id}
