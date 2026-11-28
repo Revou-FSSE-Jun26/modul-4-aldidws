@@ -15,6 +15,8 @@ function qs(params: Record<string, string | number | boolean | undefined>): stri
 const enc = encodeURIComponent;
 
 export const apiPaths = {
+  boardPage: (boardId: string) => `/boards/${enc(boardId)}`,
+
   login: () => "/api/auth/login",
   register: () => "/api/auth/register",
 

@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CheckCircle2, Plus } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/errors";
 import { resolveColumnColor } from "@/lib/columnColor";
+import { listComments } from "@/lib/services/commentsService";
 import { showError } from "@/lib/toast";
 import type { Card, ColumnColor, ColumnWithCards } from "@/lib/types/api";
 import type { DragHandlers } from "@/hooks/useDragAndDrop";
@@ -11,64 +14,101 @@ import { BaseModal } from "@/components/shared/BaseModal";
 import { AddCardForm } from "@/components/board/AddCardForm";
 import { BoardCard } from "@/components/board/BoardCard";
 import { ColumnHeader } from "@/components/board/ColumnHeader";
-import { DueDateBadge } from "@/components/board/DueDateBadge";
-import { LabelPill } from "@/components/board/LabelPill";
 
 export const COLUMN_HAS_CARDS_MESSAGE =
   "This column still has cards. Move or delete them first.";
 
+const COLUMN_SURFACE: Record<ColumnColor, string> = {
+  gray: "bg-[#ECEEE9] border-[#DFE2DA]",
+  blue: "bg-[#D8EAF8] border-[#C7DFF1]",
+  orange: "bg-[#F9E8B5] border-[#F0DFA7]",
+  green: "bg-[#D9EBCF] border-[#C9E1BF]",
+  red: "bg-[#EADCF5] border-[#DDCBEF]",
+};
+
+const LABEL_STRIP_COLORS: Record<string, string> = {
+  blue: "bg-blue-500",
+  sky: "bg-sky-400",
+  graphite: "bg-slate-600",
+  silver: "bg-gray-300",
+  red: "bg-red-500",
+  orange: "bg-orange-400",
+  green: "bg-emerald-500",
+  purple: "bg-purple-500",
+};
+
+const INTERACTIVE_TARGET_SELECTOR = [
+  "button",
+  "a",
+  "input",
+  "textarea",
+  "select",
+  '[role="menu"]',
+  '[role="menuitem"]',
+  '[role="dialog"]',
+  "[data-no-column-drag]",
+].join(", ");
+
+function formatShortDueDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso.slice(5, 10);
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function getInlineCommentsCount(card: Card): number | undefined {
+  const raw = card as unknown as Record<string, unknown>;
+  if (typeof raw.comments_count === "number") return raw.comments_count;
+  if (typeof raw.comment_count === "number") return raw.comment_count;
+  if (Array.isArray(raw.comments)) return raw.comments.length;
+  return undefined;
+}
+
 export interface BoardColumnProps {
   column: ColumnWithCards;
-  /** Rejects with an ApiError when the server refuses. */
   onRename: (columnId: string, name: string) => Promise<void>;
-  /** Rejects with a 409 ApiError when the column still has cards. */
   onDelete: (columnId: string) => Promise<void>;
-  /** Updates the status color and/or Done flag. Rejects with an ApiError on failure. */
   onUpdate?: (
     columnId: string,
     patch: { color?: ColumnColor | null; is_done?: boolean },
   ) => Promise<void>;
-  onAddCard: (columnId: string, title: string, position?: "top") => Promise<void>;
+  onAddCard: (
+    columnId: string,
+    title: string,
+    position?: "top",
+  ) => Promise<void>;
   onOpenCard: (card: Card) => void;
   dragHandlers: DragHandlers;
   draggingCardId: string | null;
-  /** Current time, shared by the whole board, used for due date badges. */
   now: Date;
-  /**
-   * Cards in the column before filtering. Pass it only while filters are
-   * active: the header then shows "x of y" and `column.cards` holds the visible cards.
-   */
   totalCount?: number;
-  /** False while filters are active: no dragging and no drop target. Default true. */
   dragEnabled?: boolean;
-  /** Column reorder wiring. Omit to hide the column drag handle. */
   columnReorder?: ColumnReorderProps;
-  /** Index of the column in the board's current order; drives the cycling status color. */
   index?: number;
-  /** Name of the board this column belongs to. Forwarded to each card for display. */
   boardName?: string;
-  /** Called (after user confirms) when the kebab Delete is selected on a card. */
   onDeleteCard?: (card: Card) => Promise<void>;
-  /** Called when the kebab Duplicate is selected on a card. */
   onDuplicateCard?: (card: Card) => Promise<void>;
-  /**
-   * When this number changes and is > 0, opens the bottom AddCardForm.
-   * A nonce pattern so the same column can be re-triggered.
-   */
-  openAddCardSignal?: number;
+  showAddCard?: boolean;
+  onAddCardCancel?: () => void;
 }
 
 export interface ColumnReorderProps {
-  /** Id of the column being dragged, or null. While set, card drop handlers are bypassed. */
   draggingColumnId: string | null;
-  onDragStart: (e: React.DragEvent<HTMLElement>, columnId: string) => void;
+  onDragStart: (
+    e: React.DragEvent<HTMLElement>,
+    columnId: string,
+  ) => void;
   onDragEnd: () => void;
   onDragOver: (e: React.DragEvent<HTMLElement>) => void;
-  onDrop: (e: React.DragEvent<HTMLElement>, targetColumnId: string) => void;
+  onDrop: (
+    e: React.DragEvent<HTMLElement>,
+    targetColumnId: string,
+  ) => void;
   onMove: (columnId: string, direction: -1 | 1) => void;
 }
 
-/** One Kanban column: header, draggable cards, add-card form, delete confirmation. */
 export function BoardColumn({
   column,
   onRename,
@@ -78,62 +118,184 @@ export function BoardColumn({
   onOpenCard,
   dragHandlers,
   draggingCardId,
-  now,
   totalCount,
   dragEnabled = true,
   columnReorder,
   index = 0,
-  boardName,
   onDeleteCard,
   onDuplicateCard,
-  openAddCardSignal = 0,
+  showAddCard = false,
+  onAddCardCancel,
 }: BoardColumnProps) {
+  const { token } = useAuth();
   const [error, setError] = useState<string | null>(null);
-  const [isAdding, setIsAdding] = useState(false);
+  const [fetchedCommentCounts, setFetchedCommentCounts] = useState<
+    Record<string, number>
+  >({});
+
+  const [isAddingLocal, setIsAddingLocal] = useState(false);
+  const isAdding = showAddCard || isAddingLocal;
+
   const [isSubmittingCard, setIsSubmittingCard] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
+
   const [isAddingTop, setIsAddingTop] = useState(false);
   const [isSubmittingTopCard, setIsSubmittingTopCard] = useState(false);
   const [topCardError, setTopCardError] = useState<string | null>(null);
+
   const addTopButtonRef = useRef<HTMLButtonElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const allowColumnDragRef = useRef(false);
+
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
-  // Card kebab menu state
-  const [confirmingCardDelete, setConfirmingCardDelete] = useState<Card | null>(null);
+
+  const [confirmingCardDelete, setConfirmingCardDelete] =
+    useState<Card | null>(null);
+
   const [isDeletingCard, setIsDeletingCard] = useState(false);
-  const [duplicatingCardId, setDuplicatingCardId] = useState<string | null>(null);
-  // Height of the dragging card's DOM element, used to size the ghost placeholder.
-  const [placeholderHeight, setPlaceholderHeight] = useState<number | null>(null);
+  const [duplicatingCardId, setDuplicatingCardId] =
+    useState<string | null>(null);
 
-  // External signal from the board header to open the bottom AddCardForm.
+  const [isColumnDropTarget, setIsColumnDropTarget] = useState(false);
+
+  const status = resolveColumnColor(column.color, index);
+  const isDoneColumn = Boolean(column.is_done);
+
+  const cards = [...column.cards].sort(
+    (a, b) => a.order - b.order,
+  );
+
+  // Fetch comment counts for cards in this column when backend doesn't include them
+  const cardIdsSignature = column.cards.map((c) => c.id).join(",");
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (openAddCardSignal > 0) setIsAdding(true);
-  }, [openAddCardSignal]);
+    if (!token || column.cards.length === 0) return;
+    let cancelled = false;
 
-  const cards = [...column.cards].sort((a, b) => a.order - b.order);
-  // While a column is being dragged, card drag/drop handlers must not run.
-  const columnDragActive = columnReorder?.draggingColumnId != null;
+    const missingCards = column.cards.filter(
+      (c) => getInlineCommentsCount(c) === undefined,
+    );
+    if (missingCards.length === 0) return;
+
+    Promise.all(
+      missingCards.map(async (c) => {
+        try {
+          const items = await listComments(token, c.id);
+          return [c.id, items.length] as const;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      const next: Record<string, number> = {};
+      for (const entry of results) {
+        if (entry) next[entry[0]] = entry[1];
+      }
+      if (Object.keys(next).length > 0) {
+        setFetchedCommentCounts((prev) => ({ ...prev, ...next }));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, cardIdsSignature, column.cards]);
+
+  // Listen to live comment changes dispatched from CardDetailModal
+  useEffect(() => {
+    function handleCommentCountEvent(e: Event) {
+      const custom = e as CustomEvent<{ cardId?: string; count?: number }>;
+      const { cardId, count } = custom.detail ?? {};
+      if (typeof cardId === "string" && typeof count === "number") {
+        setFetchedCommentCounts((prev) => ({ ...prev, [cardId]: count }));
+      }
+    }
+
+    window.addEventListener("revotask:card-comments-changed", handleCommentCountEvent);
+    return () => {
+      window.removeEventListener(
+        "revotask:card-comments-changed",
+        handleCommentCountEvent,
+      );
+    };
+  }, []);
+
+  const draggingColumnId = columnReorder?.draggingColumnId ?? null;
+  const isDraggingThisColumn = draggingColumnId === column.id;
+  const columnDragActive = draggingColumnId != null;
+  const canDragColumn = Boolean(columnReorder) && draggingCardId == null;
+
   const cardDnd = dragEnabled && !columnDragActive;
+
+  function isInteractiveTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) return false;
+    return Boolean(target.closest(INTERACTIVE_TARGET_SELECTOR));
+  }
+
+  function handleColumnMouseDown(e: React.MouseEvent<HTMLElement>) {
+    if (!canDragColumn || e.button !== 0) {
+      allowColumnDragRef.current = false;
+      return;
+    }
+    allowColumnDragRef.current = !isInteractiveTarget(e.target);
+  }
+
+  function handleColumnDragStartWithTilt(
+    e: React.DragEvent<HTMLElement>,
+    columnId: string,
+  ) {
+    if (!canDragColumn) {
+      e.preventDefault();
+      return;
+    }
+    const startedFromBlankArea =
+      allowColumnDragRef.current || !isInteractiveTarget(e.target);
+    allowColumnDragRef.current = false;
+    if (!startedFromBlankArea) {
+      e.preventDefault();
+      return;
+    }
+
+    columnReorder?.onDragStart(e, columnId);
+  }
+
+  function handleColumnDragEndWithReset() {
+    allowColumnDragRef.current = false;
+    setIsColumnDropTarget(false);
+    columnReorder?.onDragEnd();
+  }
 
   async function handleRename(name: string) {
     setError(null);
+
     try {
       await onRename(column.id, name);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Could not rename the column.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not rename the column.",
+      );
     }
   }
 
-  /** Await-then-update: the parent state changes only after the server accepts. */
-  async function handleUpdate(patch: { color?: ColumnColor | null; is_done?: boolean }) {
+  async function handleUpdate(
+    patch: { color?: ColumnColor | null; is_done?: boolean },
+  ) {
     if (!onUpdate || isUpdating) return;
+
     setIsUpdating(true);
+
     try {
       await onUpdate(column.id, patch);
     } catch (err: unknown) {
-      showError(err instanceof Error ? err.message : "Could not update the column.");
+      showError(
+        err instanceof Error
+          ? err.message
+          : "Could not update the column.",
+      );
     } finally {
       setIsUpdating(false);
     }
@@ -142,10 +304,12 @@ export function BoardColumn({
   async function handleConfirmDelete() {
     setIsDeleting(true);
     setError(null);
+
     try {
       await onDelete(column.id);
     } catch (err: unknown) {
       setConfirmingDelete(false);
+
       setError(
         err instanceof ApiError && err.isConflict
           ? COLUMN_HAS_CARDS_MESSAGE
@@ -153,6 +317,7 @@ export function BoardColumn({
             ? err.message
             : "Could not delete the column.",
       );
+
       setIsDeleting(false);
     }
   }
@@ -160,11 +325,21 @@ export function BoardColumn({
   async function handleAddCard(title: string) {
     setIsSubmittingCard(true);
     setCardError(null);
+
     try {
       await onAddCard(column.id, title);
-      setIsAdding(false);
+
+      setIsAddingLocal(false);
+
+      if (showAddCard) {
+        onAddCardCancel?.();
+      }
     } catch (err: unknown) {
-      setCardError(err instanceof Error ? err.message : "Could not add the card.");
+      setCardError(
+        err instanceof Error
+          ? err.message
+          : "Could not add the card.",
+      );
     } finally {
       setIsSubmittingCard(false);
     }
@@ -173,12 +348,18 @@ export function BoardColumn({
   async function handleAddTopCard(title: string) {
     setIsSubmittingTopCard(true);
     setTopCardError(null);
+
     try {
       await onAddCard(column.id, title, "top");
+
       setIsAddingTop(false);
       addTopButtonRef.current?.focus();
     } catch (err: unknown) {
-      setTopCardError(err instanceof Error ? err.message : "Could not add the card.");
+      setTopCardError(
+        err instanceof Error
+          ? err.message
+          : "Could not add the card.",
+      );
     } finally {
       setIsSubmittingTopCard(false);
     }
@@ -186,12 +367,18 @@ export function BoardColumn({
 
   async function handleConfirmCardDelete() {
     if (!confirmingCardDelete || !onDeleteCard) return;
+
     setIsDeletingCard(true);
+
     try {
       await onDeleteCard(confirmingCardDelete);
       setConfirmingCardDelete(null);
     } catch (err: unknown) {
-      showError(err instanceof Error ? err.message : "Could not delete the card.");
+      showError(
+        err instanceof Error
+          ? err.message
+          : "Could not delete the card.",
+      );
     } finally {
       setIsDeletingCard(false);
     }
@@ -199,12 +386,13 @@ export function BoardColumn({
 
   async function handleDuplicateCard(card: Card) {
     if (!onDuplicateCard) return;
+
     setDuplicatingCardId(card.id);
+
     try {
       await onDuplicateCard(card);
     } catch {
-      // Errors (e.g. label-failure) are handled by the parent caller; swallow here
-      // so the unhandled-rejection does not bubble through the void-called handler.
+      // Error handled by parent.
     } finally {
       setDuplicatingCardId(null);
     }
@@ -212,164 +400,303 @@ export function BoardColumn({
 
   return (
     <section
+      ref={sectionRef}
       role="listitem"
       aria-label={column.name}
       data-column-id={column.id}
-      data-status={resolveColumnColor(column.color, index)}
-      className="flex w-[85vw] max-w-[260px] min-w-[210px] shrink-0 snap-start flex-col gap-2 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-column)] p-2 sm:w-[210px]"
+      data-status={status}
+      data-done={isDoneColumn ? "true" : undefined}
+      data-dragging={isDraggingThisColumn ? "true" : undefined}
+      draggable={canDragColumn || undefined}
+      onMouseDown={handleColumnMouseDown}
+      onDragStart={
+        canDragColumn
+          ? (e) => handleColumnDragStartWithTilt(e, column.id)
+          : undefined
+      }
+      onDragEnd={canDragColumn ? handleColumnDragEndWithReset : undefined}
+      className={[
+        "flex w-[84vw] min-w-[264px] max-w-[304px] sm:w-[292px] sm:min-w-[280px]",
+        "shrink-0 snap-start flex-col",
+        "overflow-hidden rounded-xl border",
+        COLUMN_SURFACE[status],
+        isDoneColumn ? "ring-1 ring-[#4E7A5E]/35" : "",
+        "shadow-[0_1px_3px_rgba(31,51,40,0.04)]",
+        "transition-all duration-150",
+        canDragColumn ? "cursor-grab active:cursor-grabbing" : "",
+        isDraggingThisColumn
+          ? "opacity-90 ring-2 ring-[#7E9E8B] shadow-[0_10px_24px_rgba(22,43,34,0.14)]"
+          : isColumnDropTarget && columnDragActive
+            ? "ring-2 ring-[#526D5C] ring-offset-1"
+            : "",
+      ].join(" ")}
+      onDragEnter={
+        columnDragActive && !isDraggingThisColumn
+          ? (e) => {
+              e.preventDefault();
+              setIsColumnDropTarget(true);
+            }
+          : undefined
+      }
       onDragOver={
-        columnDragActive ? columnReorder?.onDragOver : cardDnd ? dragHandlers.onDragOver : undefined
+        columnDragActive
+          ? (e) => {
+              if (!isDraggingThisColumn) {
+                setIsColumnDropTarget(true);
+              }
+              columnReorder?.onDragOver(e);
+            }
+          : cardDnd
+            ? dragHandlers.onDragOver
+            : undefined
+      }
+      onDragLeave={
+        columnDragActive
+          ? (e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                setIsColumnDropTarget(false);
+              }
+            }
+          : undefined
       }
       onDrop={
         columnDragActive
-          ? (e) => columnReorder?.onDrop(e, column.id)
+          ? (e) => {
+              setIsColumnDropTarget(false);
+              columnReorder?.onDrop(e, column.id);
+            }
           : cardDnd
             ? (e) => dragHandlers.onDrop(e, column.id, null)
             : undefined
       }
     >
-      {/* Colored accent bar along the top edge of the column */}
-      <span aria-hidden="true" className="col-accent-bar -mx-2 -mt-2 mb-0 h-[3px] rounded-t-xl" />
-      <ColumnHeader
-        title={column.name}
-        cardCount={cards.length}
-        visibleCount={totalCount !== undefined ? cards.length : undefined}
-        totalCount={totalCount}
-        status={resolveColumnColor(column.color, index)}
-        onRename={(name) => void handleRename(name)}
-        onColumnDelete={() => setConfirmingDelete(true)}
-        color={column.color}
-        isDone={column.is_done}
-        actionsDisabled={isUpdating}
-        onAddTask={() => setIsAddingTop(true)}
-        addTaskButtonRef={addTopButtonRef}
-        onColorChange={onUpdate && ((color) => void handleUpdate({ color }))}
-        onDoneChange={onUpdate && ((isDone) => void handleUpdate({ is_done: isDone }))}
-        reorder={
-          columnReorder && {
-            columnId: column.id,
-            onDragStart: (e) => columnReorder.onDragStart(e, column.id),
-            onDragEnd: columnReorder.onDragEnd,
-            onMove: (direction) => columnReorder.onMove(column.id, direction),
+      {/* Column header */}
+      <div className="px-3 pb-2.5 pt-3 sm:px-3.5">
+        <ColumnHeader
+          title={column.name}
+          cardCount={cards.length}
+          visibleCount={
+            totalCount !== undefined ? cards.length : undefined
           }
-        }
-      />
-      {error && (
-        <p role="alert" className="text-xs text-[var(--accent-red)]">
-          {error}
-        </p>
-      )}
-      {isAddingTop && (
-        <AddCardForm
-          onCardCreate={(title) => void handleAddTopCard(title)}
-          onCancel={() => {
-            setIsAddingTop(false);
-            setTopCardError(null);
-            addTopButtonRef.current?.focus();
-          }}
-          isSubmitting={isSubmittingTopCard}
-          errorMessage={topCardError}
+          totalCount={totalCount}
+          status={status}
+          onRename={(name) => void handleRename(name)}
+          onColumnDelete={() => setConfirmingDelete(true)}
+          color={column.color}
+          isDone={isDoneColumn}
+          actionsDisabled={isUpdating}
+          onAddTask={() => setIsAddingTop(true)}
+          addTaskButtonRef={addTopButtonRef}
+          onColorChange={
+            onUpdate &&
+            ((color) => void handleUpdate({ color }))
+          }
+          onDoneChange={
+            onUpdate &&
+            ((isDone) => void handleUpdate({ is_done: isDone }))
+          }
+          reorder={
+            columnReorder
+              ? {
+                  columnId: column.id,
+                  onDragStart: handleColumnDragStartWithTilt,
+                  onDragEnd: handleColumnDragEndWithReset,
+                  onMove: (direction) =>
+                    columnReorder.onMove(column.id, direction),
+                }
+              : undefined
+          }
         />
-      )}
-      {cards.length === 0 ? (
-        (totalCount ?? 0) === 0 && (
-          <p className="px-1 text-xs text-[var(--text-muted)]">No tasks</p>
-        )
-      ) : (
-        <ul className="flex list-none flex-col gap-2 p-0">
-          {cards.map((card) =>
-            draggingCardId === card.id ? (
-              <li
-                key={card.id}
-                data-placeholder="true"
+
+        {onUpdate && (
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              disabled={isUpdating}
+              aria-pressed={isDoneColumn}
+              onClick={() => void handleUpdate({ is_done: !isDoneColumn })}
+              className={[
+                "inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:px-2 sm:py-1 sm:text-[10px]",
+                isDoneColumn
+                  ? "border-[#2D6A4F]/30 bg-[#E3F1E8] text-[#1D4E38] hover:bg-[#D5E9DC]"
+                  : "border-black/10 bg-white/65 text-[#4E6356] hover:bg-white hover:text-[#162B22]",
+              ].join(" ")}
+            >
+              <CheckCircle2
+                size={12}
+                strokeWidth={2}
+                className={isDoneColumn ? "text-[#2D6A4F]" : "text-[#6E7A73]"}
                 aria-hidden="true"
-                style={{ height: `${placeholderHeight ?? 60}px` }}
-                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                onDragOver={(e) => { e.preventDefault(); }}
               />
-            ) : (
-              <li
-                key={card.id}
-                draggable={dragEnabled && (card.can_move ?? true) || undefined}
-                onDragStart={dragEnabled && (card.can_move ?? true) ? (e) => {
-                  // Measure card height for the placeholder
-                  const liEl = e.currentTarget as HTMLElement;
-                  const height = liEl.getBoundingClientRect().height;
-                  setPlaceholderHeight(height);
+              <span>
+                {isDoneColumn ? "Done column" : "Mark as done column"}
+              </span>
+            </button>
 
-                  // Build a tilted clone as the drag image
-                  const articleEl = liEl.querySelector("article");
-                  if (articleEl) {
-                    const clone = articleEl.cloneNode(true) as HTMLElement;
-                    clone.classList.add("drag-tilt-clone");
-                    clone.style.width = `${articleEl.offsetWidth}px`;
-                    document.body.appendChild(clone);
-                    e.dataTransfer.setDragImage(clone, articleEl.offsetWidth / 2, 20);
-                    // Remove after the browser captures the image
-                    requestAnimationFrame(() => { clone.remove(); });
-                  }
+            {isDoneColumn && (
+              <span className="rounded bg-[#2D6A4F]/12 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#1D4E38]">
+                Done
+              </span>
+            )}
+          </div>
+        )}
+      </div>
 
-                  dragHandlers.onDragStart(e, card.id);
-                } : undefined}
-                onDragEnd={dragEnabled && (card.can_move ?? true) ? (e) => {
-                  setPlaceholderHeight(null);
-                  dragHandlers.onDragEnd(e);
-                } : undefined}
-                onDragOver={cardDnd ? dragHandlers.onDragOver : undefined}
-                onDrop={cardDnd ? (e) => dragHandlers.onDrop(e, column.id, card.id) : undefined}
-              >
-                <BoardCard
-                  title={card.title}
-                  priority={card.priority ?? undefined}
-                  boardName={boardName}
-                  isDoneColumn={column.is_done ?? false}
-                  meta={
-                    (card.labels && card.labels.length > 0) || card.due_date ? (
-                      <div className="flex flex-wrap items-center gap-1">
-                        {card.labels?.map((label) => (
-                          <LabelPill key={label.id} name={label.name} color={label.color} />
-                        ))}
-                        {card.due_date && <DueDateBadge dueDate={card.due_date} now={now} />}
-                      </div>
-                    ) : undefined
-                  }
-                  onCardClick={() => onOpenCard(card)}
-                  onCardMenu={
-                    onDeleteCard || onDuplicateCard
-                      ? {
-                          onEdit: () => onOpenCard(card),
-                          onDuplicate: () => void handleDuplicateCard(card),
-                          onDelete: () => setConfirmingCardDelete(card),
-                          isDuplicating: duplicatingCardId === card.id,
+      {/* Cards */}
+      <div className="flex flex-1 flex-col gap-2.5 px-2 pb-3 sm:px-2.5">
+        {error && (
+          <p
+            role="alert"
+            className="rounded-lg bg-white/70 px-2.5 py-2 text-xs text-[#B34F48]"
+          >
+            {error}
+          </p>
+        )}
+
+        {/* Add card to top */}
+        {isAddingTop && (
+          <div data-no-column-drag="true">
+            <AddCardForm
+              onCardCreate={(title) => void handleAddTopCard(title)}
+              onCancel={() => {
+                setIsAddingTop(false);
+                setTopCardError(null);
+                addTopButtonRef.current?.focus();
+              }}
+              isSubmitting={isSubmittingTopCard}
+              errorMessage={topCardError}
+            />
+          </div>
+        )}
+
+        {cards.length === 0 ? (
+          (totalCount ?? 0) === 0 && (
+            <p className="py-6 text-center text-xs text-[#718078]">
+              No tasks yet
+            </p>
+          )
+        ) : (
+          <ul className="flex list-none flex-col gap-2 p-0">
+            {cards.map((card) => {
+              const isDraggingThisCard = draggingCardId === card.id;
+              const canDragCard = dragEnabled && (card.can_move ?? true);
+              const hasLabels = Boolean(card.labels && card.labels.length > 0);
+              const commentCount =
+                fetchedCommentCounts[card.id] ?? getInlineCommentsCount(card);
+
+              return (
+                <li
+                  key={card.id}
+                  data-no-column-drag="true"
+                  draggable={canDragCard || undefined}
+                  className={[
+                    "group/markdown rounded-xl transition-colors",
+                    isDraggingThisCard
+                      ? "opacity-90 ring-2 ring-[#7E9E8B] shadow-[0_10px_24px_rgba(22,43,34,0.14)]"
+                      : "hover:bg-white/35",
+                  ].join(" ")}
+                  onDragStart={
+                    canDragCard
+                      ? (e) => {
+                          e.stopPropagation();
+                          allowColumnDragRef.current = false;
+                          dragHandlers.onDragStart(e, card.id);
                         }
                       : undefined
                   }
-                />
-              </li>
-            ),
-          )}
-        </ul>
-      )}
-      {isAdding ? (
-        <AddCardForm
-          onCardCreate={(title) => void handleAddCard(title)}
-          onCancel={() => {
-            setIsAdding(false);
-            setCardError(null);
-          }}
-          isSubmitting={isSubmittingCard}
-          errorMessage={cardError}
-        />
-      ) : (
-        <BaseButton
-          variant="secondary"
-          size="sm"
-          onClick={() => setIsAdding(true)}
-          aria-label={`Add card to ${column.name}`}
-        >
-          Add card
-        </BaseButton>
-      )}
+                  onDragEnd={
+                    canDragCard
+                      ? (e) => {
+                          e.stopPropagation();
+                          dragHandlers.onDragEnd(e);
+                        }
+                      : undefined
+                  }
+                  onDragOver={cardDnd ? dragHandlers.onDragOver : undefined}
+                  onDrop={
+                    cardDnd
+                      ? (e) => dragHandlers.onDrop(e, column.id, card.id)
+                      : undefined
+                  }
+                >
+                  <BoardCard
+                    title={card.title}
+                    description={card.description}
+                    priority={card.priority ?? undefined}
+                    dueDateLabel={
+                      card.due_date ? formatShortDueDate(card.due_date) : null
+                    }
+                    commentsCount={commentCount}
+                    isDragging={isDraggingThisCard}
+                    isDoneColumn={isDoneColumn}
+                    meta={
+                      hasLabels ? (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {card.labels?.map((label) => (
+                            <span
+                              key={label.id}
+                              title={label.name}
+                              aria-label={label.name}
+                              className={`block h-1.5 w-8 rounded-full transition-opacity group-hover/markdown:opacity-95 ${
+                                LABEL_STRIP_COLORS[label.color] ?? "bg-slate-500"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      ) : undefined
+                    }
+                    onCardClick={() => onOpenCard(card)}
+                    onCardMenu={
+                      onDeleteCard || onDuplicateCard
+                        ? {
+                            onEdit: () => onOpenCard(card),
+                            onDuplicate: () =>
+                              void handleDuplicateCard(card),
+                            onDelete: () =>
+                              setConfirmingCardDelete(card),
+                            isDuplicating:
+                              duplicatingCardId === card.id,
+                          }
+                        : undefined
+                    }
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {/* Add task at bottom */}
+        {isAdding ? (
+          <div data-no-column-drag="true">
+            <AddCardForm
+              onCardCreate={(title) => void handleAddCard(title)}
+              onCancel={() => {
+                setIsAddingLocal(false);
+                setCardError(null);
+
+                if (showAddCard) {
+                  onAddCardCancel?.();
+                }
+              }}
+              isSubmitting={isSubmittingCard}
+              errorMessage={cardError}
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setIsAddingLocal(true)}
+            aria-label={`Add card to ${column.name}`}
+            className="flex min-h-9 w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-2.5 text-left text-xs font-medium text-[#526D5C] transition-colors hover:bg-white/40 hover:text-[#244438] sm:min-h-0 sm:px-2 sm:py-2 sm:text-[11px]"
+          >
+            <Plus size={14} strokeWidth={2} aria-hidden="true" />
+            <span>Add a card</span>
+          </button>
+        )}
+      </div>
+
+      {/* Delete column modal */}
       <BaseModal
         isOpen={confirmingDelete}
         onClose={() => {
@@ -378,10 +705,15 @@ export function BoardColumn({
         title={`Delete column "${column.name}"?`}
         maxWidth="max-w-sm"
       >
-        <div className="flex justify-end gap-2">
-          <BaseButton variant="secondary" onClick={() => setConfirmingDelete(false)}>
+        <div className="flex flex-wrap justify-end gap-2">
+          <BaseButton
+            variant="secondary"
+            disabled={isDeleting}
+            onClick={() => setConfirmingDelete(false)}
+          >
             Cancel
           </BaseButton>
+
           <BaseButton
             variant="destructive"
             disabled={isDeleting}
@@ -391,18 +723,27 @@ export function BoardColumn({
           </BaseButton>
         </div>
       </BaseModal>
+
+      {/* Delete card modal */}
       <BaseModal
         isOpen={confirmingCardDelete !== null}
         onClose={() => {
-          if (!isDeletingCard) setConfirmingCardDelete(null);
+          if (!isDeletingCard) {
+            setConfirmingCardDelete(null);
+          }
         }}
         title={`Delete card "${confirmingCardDelete?.title ?? ""}"?`}
         maxWidth="max-w-sm"
       >
-        <div className="flex justify-end gap-2">
-          <BaseButton variant="secondary" onClick={() => setConfirmingCardDelete(null)}>
+        <div className="flex flex-wrap justify-end gap-2">
+          <BaseButton
+            variant="secondary"
+            disabled={isDeletingCard}
+            onClick={() => setConfirmingCardDelete(null)}
+          >
             Cancel
           </BaseButton>
+
           <BaseButton
             variant="destructive"
             disabled={isDeletingCard}
