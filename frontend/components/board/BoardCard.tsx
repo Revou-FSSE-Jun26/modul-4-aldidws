@@ -1,178 +1,179 @@
 import { type ReactNode } from "react";
 import Link from "next/link";
-import { ActionMenu } from "@/components/shared/ActionMenu";
-import { BaseButton } from "@/components/shared/BaseButton";
+import { Calendar, Check, MessageCircle } from "lucide-react";
 
 export interface CardMenuHandlers {
   onEdit: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
-  /** True while the duplicate request is in-flight; disables the Duplicate item. */
   isDuplicating?: boolean;
 }
 
 export interface BoardCardProps {
   title: string;
-  /** Optional badge or metadata rendered beneath the title. */
+  description?: string | null;
+  dueDateLabel?: string | null;
+  commentsCount?: number;
+  assigneeName?: string | null;
   meta?: ReactNode;
-  /** Called when the user clicks anywhere on the card body. */
   onCardClick?: () => void;
-  /** Called when the user activates the delete action. */
   onCardDelete?: () => void;
-  /**
-   * When set, the title is rendered as a real link (accessible name is the
-   * title) instead of an "Open card" button.
-   */
   href?: string;
-  /** Optional id for the open link or button, used to restore focus. */
   openId?: string;
-  /**
-   * Priority level for the card. When present, a plain-text indicator is
-   * rendered above the meta block with `data-priority` for styling hooks.
-   */
   priority?: "low" | "medium" | "high";
-  /** Name of the board this card belongs to. Shown above the title when provided. */
   boardName?: string;
-  /**
-   * When provided, renders a kebab ActionMenu (`...`) with Edit / Duplicate / Delete items.
-   * The existing `×` delete button (onCardDelete) is independent and unchanged.
-   */
   onCardMenu?: CardMenuHandlers;
-  /**
-   * When true, adds `data-done="true"` to the card title element.
-   * The design layer will apply strikethrough styling via this attribute.
-   */
   isDoneColumn?: boolean;
-  /** True while this card is being dragged; adds the lift+tilt styling hook. */
   isDragging?: boolean;
 }
 
-/**
- * Presentational card tile rendered inside a board column.
- * Receives all data and callbacks from its parent — contains no data-fetching
- * or mutation logic.
- */
+const PRIORITY_STYLES: Record<"low" | "medium" | "high", string> = {
+  low: "text-[#678870]",
+  medium: "text-[#B58A3B]",
+  high: "text-[#C46F56]",
+};
+
 export function BoardCard({
   title,
+  description,
+  dueDateLabel,
+  commentsCount,
+  assigneeName,
   meta,
   onCardClick,
-  onCardDelete,
   href,
   openId,
   priority,
-  boardName,
-  onCardMenu,
   isDoneColumn,
   isDragging,
 }: BoardCardProps) {
   const openClasses =
-    "block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)] focus-visible:ring-offset-1";
+    "block w-full touch-manipulation cursor-pointer rounded-md text-left no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8AA995] focus-visible:ring-offset-2";
 
-  const priorityIndicator = priority ? (
-    <span data-priority={priority} className="text-xs text-[var(--text-muted)]">
-      {priority.charAt(0).toUpperCase() + priority.slice(1)}
-    </span>
-  ) : null;
+  const trimmedDescription = description?.trim();
+  const hasComments = typeof commentsCount === "number" && commentsCount > 0;
 
-  // Right-pad the card body when an action button occupies the top-right corner.
-  const hasActionButton = Boolean(onCardDelete) || Boolean(onCardMenu);
+  const bodyContent = (
+    <div className="flex flex-col gap-1.5 no-underline">
+      <div className="flex items-start justify-between gap-2">
+        <span className="block min-w-0 flex-1 break-words text-sm font-semibold leading-snug text-[#173B30] no-underline sm:text-[15px]">
+          {title}
+        </span>
+
+        {isDoneColumn && (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#DCE5CC] px-2 py-0.5 text-[10px] font-semibold text-[#16382C] no-underline">
+            <Check size={11} strokeWidth={2.2} aria-hidden="true" />
+            <span>Done</span>
+          </span>
+        )}
+      </div>
+
+      {trimmedDescription && (
+        <div className="group/desc -mx-1.5 rounded-md px-1.5 py-0.5 transition-colors duration-150 hover:bg-[#F3F6EE]">
+          <p className="line-clamp-2 break-words text-xs leading-relaxed text-[#6E7A73] no-underline transition-colors duration-150 group-hover/desc:text-[#173B30] sm:text-[12.5px]">
+            {trimmedDescription}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+
+  const hasFooterMeta =
+    Boolean(dueDateLabel) ||
+    hasComments ||
+    Boolean(assigneeName);
 
   return (
-    <article className="board-card relative flex flex-col gap-1 rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] px-3 py-2 shadow-[var(--shadow-card)]">
-      {priorityIndicator}
-      {boardName && (
-        <span aria-label={`Board: ${boardName}`} className="text-xs text-[var(--text-muted)]">
-          {boardName}
-        </span>
-      )}
-      {href ? (
-        <>
-          <Link href={href} id={openId} className={openClasses}>
+    <article
+      className={[
+        "board-card flex flex-col gap-2 no-underline sm:gap-2.5",
+        "rounded-xl border",
+        isDoneColumn
+          ? "border-[#C7D5BC] bg-[#FAFBF8]"
+          : "border-[#DCE6F0] bg-white",
+        "px-3 py-3 sm:px-4 sm:py-3.5",
+        "shadow-[0_1px_2px_rgba(23,59,48,0.03)]",
+        "transition-colors duration-150",
+        "hover:border-[#B6C8B2]",
+        isDragging ? "rotate-1 opacity-75" : "",
+      ].join(" ")}
+    >
+      {/* Top row: color label strips on the left, priority indicator on the right */}
+      {(meta || priority) && (
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5 pt-0.5">
+            {meta}
+          </div>
+          {priority && (
             <span
-              className="text-sm font-medium text-[var(--text-primary)]"
-              {...(isDoneColumn ? { "data-done": "true" } : {})}
+              data-priority={priority}
+              className={`inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium no-underline sm:text-[12px] ${PRIORITY_STYLES[priority]}`}
             >
-              {title}
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              <span>{priority.charAt(0).toUpperCase() + priority.slice(1)}</span>
             </span>
-          </Link>
-          {meta && <div className="mt-1">{meta}</div>}
-        </>
+          )}
+        </div>
+      )}
+
+      {/* Title & short description */}
+      {href ? (
+        <Link href={href} id={openId} className={openClasses}>
+          {bodyContent}
+        </Link>
       ) : (
-        // Plain <button> kept on purpose: this is the whole tile acting as
-        // a click target, not a visual button, so BaseButton styling does not apply.
-        <>
-          <button
-            type="button"
-            id={openId}
-            onClick={onCardClick}
-            className={`${openClasses} ${hasActionButton ? "pr-10" : ""}`}
-            aria-label={`Open card: ${title}`}
-          >
-            <p
-              className="text-sm font-medium text-[var(--text-primary)]"
-              {...(isDoneColumn ? { "data-done": "true" } : {})}
-            >
-              {title}
-            </p>
-          </button>
-          {/* Outside the button so the aria-label does not hide the badge text. */}
-          {meta && <div className={`mt-1 ${hasActionButton ? "pr-10" : ""}`}>{meta}</div>}
-        </>
+        <button
+          type="button"
+          id={openId}
+          onClick={onCardClick}
+          className={openClasses}
+          aria-label={`Open card: ${title}`}
+        >
+          {bodyContent}
+        </button>
       )}
 
-      {/* Delete action — always visible so it works on touch screens */}
-      {onCardDelete && (
-        <BaseButton
-          variant="secondary"
-          size="icon"
-          onClick={onCardDelete}
-          aria-label={`Delete card: ${title}`}
-          className="absolute right-1 top-1 !border-0 !bg-transparent text-[var(--text-muted)] hover:text-[var(--accent-red)]"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 16 16"
-            fill="currentColor"
-            className="h-3.5 w-3.5"
-            aria-hidden="true"
-          >
-            <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
-          </svg>
-        </BaseButton>
-      )}
+      {/* Bottom meta row: due date (left), comment count (center), assignee (right) */}
+      {hasFooterMeta && (
+        <div className="grid grid-cols-3 items-center gap-1.5 pt-1 text-[11px] text-[#6E7A73] no-underline sm:gap-2 sm:text-[12px]">
+          <div className="flex min-w-0 items-center justify-start">
+            {dueDateLabel && (
+              <span className="inline-flex min-w-0 items-center gap-1 no-underline sm:gap-1.5">
+                <Calendar
+                  size={13}
+                  strokeWidth={1.75}
+                  className="shrink-0 text-[#7C8780] sm:h-3.5 sm:w-3.5"
+                  aria-hidden="true"
+                />
+                <span className="truncate">{dueDateLabel}</span>
+              </span>
+            )}
+          </div>
 
-      {/* Kebab action menu (Edit / Duplicate / Delete) */}
-      {onCardMenu && (
-        // draggable=false + stopPropagation on dragstart prevents the parent <li>
-        // drag from activating when the user clicks the trigger button.
-        <div
-          className="absolute right-1 top-1"
-          draggable={false}
-          onDragStart={(e) => e.stopPropagation()}
-        >
-          <ActionMenu
-            label={`Card actions for ${title}`}
-            items={[
-              {
-                id: "edit",
-                label: "Edit",
-                disabled: Boolean(onCardMenu.isDuplicating),
-                onSelect: onCardMenu.onEdit,
-              },
-              {
-                id: "duplicate",
-                label: "Duplicate",
-                disabled: Boolean(onCardMenu.isDuplicating),
-                onSelect: onCardMenu.onDuplicate,
-              },
-              {
-                id: "delete",
-                label: "Delete",
-                disabled: Boolean(onCardMenu.isDuplicating),
-                onSelect: onCardMenu.onDelete,
-              },
-            ]}
-          />
+          <div className="flex items-center justify-center">
+            {hasComments && (
+              <span
+                className="inline-flex items-center gap-1 no-underline sm:gap-1.5"
+                aria-label={`${commentsCount} comments`}
+              >
+                <MessageCircle
+                  size={13}
+                  strokeWidth={1.75}
+                  className="shrink-0 text-[#7C8780] sm:h-3.5 sm:w-3.5"
+                  aria-hidden="true"
+                />
+                <span>{commentsCount}</span>
+              </span>
+            )}
+          </div>
+
+          <div className="flex min-w-0 items-center justify-end">
+            {assigneeName && (
+              <span className="truncate font-medium text-[#5E6B64] no-underline">
+                {assigneeName}
+              </span>
+            )}
+          </div>
         </div>
       )}
     </article>

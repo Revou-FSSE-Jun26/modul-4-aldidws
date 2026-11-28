@@ -1,3 +1,7 @@
+import type { PageMeta } from "@/lib/apiClient";
+
+export type { PageMeta };
+
 /**
  * API types. Field names match the Flask backend exactly
  * (Card.order, Board.user_id, notification title/body/is_read).
@@ -74,6 +78,8 @@ export interface CardLabel {
   color: LabelColor;
 }
 
+export type CardPriority = "low" | "medium" | "high";
+
 export interface Card {
   id: string;
   column_id: string;
@@ -85,7 +91,7 @@ export interface Card {
   /** UTC ISO 8601 string such as "2026-12-01T17:00:00Z", or null. */
   due_date: string | null;
   /** Priority level, or null for no priority. */
-  priority: "low" | "medium" | "high" | null;
+  priority: CardPriority | null;
   /** Sorted by name; empty when the card has no labels. */
   labels: CardLabel[];
   deleted_at: string | null;
@@ -93,13 +99,13 @@ export interface Card {
   updated_at: string;
   /**
    * Server-computed verdict for the *caller*: can the caller drag this card?
-   * Present only on board-detail payloads.  The server re-validates every
+   * Present only on board-detail payloads. The server re-validates every
    * move; this flag drives the UI affordance.
    */
   can_move?: boolean;
   /**
    * Board-member ids tagged on this card, present only on board-detail
-   * payloads.  Drives the owner's "Who can move this card" picker.
+   * payloads. Drives the owner's "Who can move this card" picker.
    */
   assignee_ids?: string[];
 }
@@ -113,13 +119,13 @@ export interface BoardDetail extends Board {
   /** All labels defined on the board, sorted by name. */
   labels: Label[];
   /**
-   * The caller's role on this board.  Omitted on the legacy export/import
+   * The caller's role on this board. Omitted on the legacy export/import
    * JSON fixture; present on the live board-detail payload.
    */
   role?: BoardRole;
   /** Nested for client convenience; mirrors {@link BoardDetail.role}. */
   access?: { role: BoardRole };
-  /** Every board member, owner first.  Omitted on the legacy export/import fixture. */
+  /** Every board member, owner first. Omitted on the legacy export/import fixture. */
   members?: BoardMember[];
 }
 
@@ -149,10 +155,6 @@ export interface ApiNotification {
   created_at: string;
   updated_at: string;
 }
-
-import type { PageMeta } from "@/lib/apiClient";
-
-export type { PageMeta };
 
 export interface Paginated<T> {
   data: T[];
