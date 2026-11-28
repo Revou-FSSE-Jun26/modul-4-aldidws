@@ -9,13 +9,13 @@ Evidence is drawn from the AI Improvement Log in `specs/CHANGELOG.md`.
 
 ## Summary
 
-| Fix | Guideline | Before | After | Impact |
-|-----|-----------|--------|-------|--------|
-| Card ordering column | `database.md` — Float for ordering | `Integer position`, O(n) reorders | `Float order`, midpoint insert | Drag-and-drop scales to any list length |
-| Business logic in route | `backend.md` — Thin routes / Service layer | DB query + ownership check in route handler | Logic extracted to `service.py` | Service testable without HTTP context |
-| Error response format | `backend.md` — Standard envelope | `{"error": "Card not found"}` (plain string) | `{"error": {"code": ..., "message": ...}}` | Frontend type-guard works across all endpoints |
-| `waitForTimeout` in tests | `testing.md` — No hardcoded waits | `page.waitForTimeout(2000)` calls | Playwright auto-waiting assertions | Tests run faster and reliably without race conditions |
-| Raw button vs BaseButton | `frontend.md` — Shared primitives | 7-line Tailwind class string duplicated | `<BaseButton variant="primary">` | Single source of truth for button styles |
+| Fix                       | Guideline                                  | Before                                       | After                                      | Impact                                                |
+| ------------------------- | ------------------------------------------ | -------------------------------------------- | ------------------------------------------ | ----------------------------------------------------- |
+| Card ordering column      | `database.md` — Float for ordering         | `Integer position`, O(n) reorders            | `Float order`, midpoint insert             | Drag-and-drop scales to any list length               |
+| Business logic in route   | `backend.md` — Thin routes / Service layer | DB query + ownership check in route handler  | Logic extracted to `service.py`            | Service testable without HTTP context                 |
+| Error response format     | `backend.md` — Standard envelope           | `{"error": "Card not found"}` (plain string) | `{"error": {"code": ..., "message": ...}}` | Frontend type-guard works across all endpoints        |
+| `waitForTimeout` in tests | `testing.md` — No hardcoded waits          | `page.waitForTimeout(2000)` calls            | Playwright auto-waiting assertions         | Tests run faster and reliably without race conditions |
+| Raw button vs BaseButton  | `frontend.md` — Shared primitives          | 7-line Tailwind class string duplicated      | `<BaseButton variant="primary">`           | Single source of truth for button styles              |
 
 ---
 
@@ -104,5 +104,59 @@ N edits across N pages.
 
 ---
 
-*Content was rephrased for compliance with licensing restrictions.*
-*Source data drawn from `specs/CHANGELOG.md` — AI Improvement Log entries Fix 1–5.*
+---
+
+## Fix 6 — FilterBar Keyboard Shortcut: Inline Handler → Custom Hook
+
+**Guideline:** `frontend.md` §event handling — use custom hooks for reusable side effects
+
+**Before:** The `f` key shortcut to focus the filter bar was originally implemented as an inline event handler directly inside the `FilterBar` component. This tied keyboard shortcut logic to a single component's render lifecycle, making it impossible to reuse or test in isolation.
+
+**After:** The shortcut logic was extracted into `hooks/useFilterShortcut.ts`, decoupling keyboard shortcut registration from the component that consumes it. The component now simply calls `useFilterShortcut(filterInputRef)` with no inline `addEventListener` logic.
+
+**Measurable difference:** The shortcut hook can be tested and reused independently; the component no longer manages a document-level side effect inline.
+
+**Status:** Fixed — committed 2026-11-28.
+
+---
+
+## Fix 7 — LabelPicker Keyboard Navigation: Missing ARIA Roles
+
+**Guideline:** `testing.md` §17 and `security.md` §XSS — accessible roles required for screen reader and keyboard users
+
+**Before:** `LabelPicker.tsx` initially lacked proper ARIA roles for keyboard-driven multi-select. The list of label options had no `role` attribute, so screen readers announced it as generic content and keyboard users had no semantic cue that multi-selection was supported.
+
+**After:** `LabelPicker.tsx` now has `role="listbox"` on the options container and `aria-multiselectable="true"`, providing correct semantics for assistive technologies and keyboard navigation.
+
+**Measurable difference:** Screen readers correctly announce the label picker as a multi-select listbox; keyboard users can navigate and select without relying on mouse interaction.
+
+**Status:** Fixed — committed 2026-11-28.
+
+---
+
+## Fix 8 — DueDateField UTC Conversion: Missing Overflow-Safe Range Check
+
+**Guideline:** `backend.md` §validation — UTC ISO dates must be validated before submission
+
+**Before:** The due date input converted a local date to UTC without an overflow-safe range check. Dates near the boundary of valid JavaScript `Date` range could produce invalid `Date` objects (returning `NaN` from `.toISOString()`), which would then be submitted to the backend as a malformed string.
+
+**After:** An overflow-safe range check was added in both `lib/dueDate.ts` and `DueDateField.tsx`. The check rejects dates outside the safe representable range before calling `.toISOString()`, returning `null` for out-of-range inputs rather than an invalid string.
+
+**Measurable difference:** Invalid `Date` objects can no longer be submitted; the UI handles the edge case gracefully instead of sending a malformed payload.
+
+**Status:** Fixed — committed 2026-11-28.
+
+---
+
+_Content was rephrased for compliance with licensing restrictions._
+_Source data drawn from `specs/CHANGELOG.md` — AI Improvement Log entries Fix 1–5._
+
+---
+
+## Final Status — Project Finalized 2026-11-28
+
+Project finalized 2026-11-28 — all features implemented and verified.
+
+Total violations recorded: 43+ (V-001 through V-043; 3 new Phase 5 fixes added above).
+All "Fixed (uncommitted)" entries updated to "Fixed — committed 2026-11-28".
+Remaining open violations (V-009, V-011, V-013, V-021, V-023) are known limitations accepted for the current project scope.

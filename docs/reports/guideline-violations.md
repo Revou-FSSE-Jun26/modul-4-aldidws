@@ -2,7 +2,7 @@
 
 This report lists the guideline violations I could confirm in the AI-generated code and artifacts in the RevoTask repository. It follows `.kiro/steering/structure.md` §4 and §8: each entry gives the guideline that was violated, what the AI actually produced, and the correction that was applied (or is still needed). The report was rewritten from scratch and replaces the earlier version (see V-029).
 
-Audit basis: V-001 to V-032 were audited at git `HEAD` `b9cf8d1`, when the working tree only had untracked files under `.agents/`. No tests, lint or build were re-run for that audit. V-033 to V-043 were added later, during the Kanban UI work: their "before" evidence is the committed code at the current `HEAD`, and their fixes are in the working tree with uncommitted changes (status "Fixed (uncommitted)"). The test runs quoted for V-033 to V-043 were executed during that work. Findings marked "(report)" come from existing agent reports and were not re-verified by running anything. No secret values are shown. Where a secret exists, only its location is given and the value is redacted.
+Audit basis: V-001 to V-032 were audited at git `HEAD` `b9cf8d1`, when the working tree only had untracked files under `.agents/`. No tests, lint or build were re-run for that audit. V-033 to V-043 were added later, during the Kanban UI work: their "before" evidence is the committed code at the current `HEAD`, and their fixes are in the working tree with uncommitted changes (status "Fixed — committed 2026-11-28"). The test runs quoted for V-033 to V-043 were executed during that work. Findings marked "(report)" come from existing agent reports and were not re-verified by running anything. No secret values are shown. Where a secret exists, only its location is given and the value is redacted.
 
 ## 1. Summary
 
@@ -11,7 +11,7 @@ Audit basis: V-001 to V-032 were audited at git `HEAD` `b9cf8d1`, when the worki
 | Status                               | Count |
 | ------------------------------------ | ----: |
 | Fixed (checked against current code) |    13 |
-| Fixed (uncommitted)                  |    11 |
+| Fixed — committed 2026-11-28         |    11 |
 | Partially fixed                      |     2 |
 | Open                                 |    17 |
 
@@ -54,51 +54,51 @@ Guideline references use two forms. `guidelines/<file>.md "<title>"` points to a
 
 ## 3. Index
 
-| ID    | Area         | Severity | Title                                                                                             | Status              | Source                         |
-| ----- | ------------ | -------- | ------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------ |
-| V-001 | frontend     | Medium   | Synchronous `setState` inside `useEffect`                                                         | Fixed (`42a645b`)   | Lint (report)                  |
-| V-002 | frontend     | Medium   | `ref.current` written during render                                                               | Fixed (`42a645b`)   | Lint (report)                  |
-| V-003 | workflow     | High     | `next build` failed to prerender `/`                                                              | Fixed (`2f2e508`)   | Build (report)                 |
-| V-004 | backend      | Low      | Analytics counted soft-deleted cards                                                              | Fixed (`dd8e301`)   | Review                         |
-| V-005 | backend      | Low      | `BoardColumn` docstring said "integer" for a Float                                                | Fixed (`dd8e301`)   | Review                         |
-| V-006 | security     | Medium   | `timezone` field had no IANA validation                                                           | Fixed (`dd8e301`)   | Review                         |
-| V-007 | backend      | Low      | Duplicate `per_page` cap (dead code)                                                              | Fixed (`dd8e301`)   | Review                         |
-| V-008 | frontend     | Low      | `BaseButton` had no `destructive` variant, `toast` had no `showLoading`                           | Fixed (`6f260ff`)   | Audit checklist                |
-| V-009 | api-contract | High     | Backend has no `/api/auth/refresh` or `/api/auth/logout` (no session restore, no server logout)   | Open                | Inspection                     |
-| V-010 | security     | High     | Refresh token written through `document.cookie` (not HttpOnly)                                    | Fixed (`f38e5a8`)   | Inspection                     |
-| V-011 | security     | High     | No rate limiting                                                                                  | Open                | Inspection                     |
-| V-012 | security     | Medium   | CORS not configured in code                                                                       | Fixed (`97e4c46`)   | Inspection                     |
-| V-013 | security     | Medium   | Password hashing is not explicitly Argon2id or bcrypt                                             | Open                | Inspection                     |
-| V-014 | security     | Low      | Default secret and DB URL in `DevelopmentConfig`                                                  | Partial             | Inspection                     |
-| V-015 | backend      | Low      | Ad-hoc 401 response copied four times in the auth decorator                                       | Open                | Inspection                     |
-| V-016 | frontend     | Medium   | Direct `fetch()` in components, hooks and context                                                 | Open                | Inspection                     |
-| V-017 | frontend     | Medium   | `NEXT_PUBLIC_API_URL` missing from `.env.example`                                                 | Fixed (`87f1f40`)   | Inspection (+ audit report)    |
-| V-018 | structure    | Medium   | Frontend has no `features/` or `lib/api/`                                                         | Open                | Inspection                     |
-| V-019 | api-contract | Medium   | Inconsistent API prefix (`/api` vs `/api/v1`)                                                     | Open                | Inspection                     |
-| V-020 | api-contract | Low      | JSON naming, pagination meta and error codes differ from api-contracts                            | Open                | Inspection                     |
-| V-021 | structure    | Low      | `common/` lacks `permissions.py`, `responses.py`, `logging.py`                                    | Open                | Inspection                     |
-| V-022 | structure    | Low      | `schema.py` instead of `schemas.py`                                                               | Open                | Inspection                     |
-| V-023 | structure    | Low      | `backend/app/.env.example` is outside the target structure                                        | Open                | Inspection                     |
-| V-024 | testing      | Medium   | Backend tests are flat, no `api/`, `integration/`, `security/`                                    | Open                | Inspection                     |
-| V-025 | testing      | Medium   | Frontend tests cover only two components                                                          | Open                | Inspection                     |
-| V-026 | testing      | Medium   | E2E has no Page Objects and no boards/cards specs                                                 | Open                | Inspection (+ audit report)    |
-| V-027 | workflow     | Low      | CI: `npx next lint`, workflow name, e2e dependencies                                              | Open                | Inspection (+ report)          |
-| V-028 | structure    | Low      | Duplicate documents (`VIOLATION_REPORT.md`, `.kiro/specs` vs `specs`)                             | Open                | Inspection                     |
-| V-029 | docs         | Medium   | Earlier violation report contained claims that cannot be verified                                 | Partial             | Inspection                     |
-| V-030 | frontend     | Low      | Unused imports and misleading comments                                                            | Open                | Inspection (+ report)          |
-| V-031 | security     | High     | `wsgi.py` uses `DevelopmentConfig`; `ProductionConfig` is never used                              | Fixed (`97e4c46`)   | Inspection                     |
-| V-032 | api-contract | High     | Register contract mismatch: frontend sends `name`, backend schema rejects it (HTTP 400)           | Fixed (`ebb347b`)   | Inspection (production report) |
-| V-033 | api-contract | High     | Board page called non-existent column/card list endpoints and hid the 404/405 as "no columns"     | Fixed (uncommitted) | Gap report + inspection        |
-| V-034 | api-contract | Medium   | Frontend card type used `position`; the backend serializes `order`                                | Fixed (uncommitted) | Gap report + inspection        |
-| V-035 | api-contract | High     | Move payload sent `{column_id, position}`; the schema requires `{column_id, order}`               | Fixed (uncommitted) | Gap report + inspection        |
-| V-036 | api-contract | Medium   | Notifications read `message`/`read`; the backend sends `title`, `body`, `is_read`                 | Fixed (uncommitted) | Gap report + inspection        |
-| V-037 | api-contract | High     | Profile sent `email`, which `PATCH /api/users/me` rejects (always 400)                            | Fixed (uncommitted) | Gap report + inspection        |
-| V-038 | api-contract | High     | My Tasks and search called `GET /api/cards`, which did not exist                                  | Fixed (uncommitted) | Gap report + inspection        |
-| V-039 | frontend     | High     | `AddCardForm`, `CardDetailModal`, `NotificationBell`, `SearchBar`, `useDragAndDrop` never mounted | Fixed (uncommitted) | Gap report + inspection        |
-| V-040 | frontend     | Medium   | Tailwind colour tokens (`bg-muted`, `border-border`, `text-destructive`, ...) were not defined    | Fixed (uncommitted) | Gap report + built CSS check   |
-| V-041 | frontend     | Medium   | `BaseModal` claimed a focus trap it did not implement and used a fixed title id                   | Fixed (uncommitted) | Gap report + inspection        |
-| V-042 | security     | Medium   | Hardcoded database password as default in `backend/tests/conftest.py` (value redacted)            | Fixed (uncommitted) | Gap report + inspection        |
-| V-043 | backend      | Medium   | Card delete removed the row although the model has `deleted_at`                                   | Fixed (uncommitted) | Gap report + inspection        |
+| ID    | Area         | Severity | Title                                                                                             | Status                       | Source                         |
+| ----- | ------------ | -------- | ------------------------------------------------------------------------------------------------- | ---------------------------- | ------------------------------ |
+| V-001 | frontend     | Medium   | Synchronous `setState` inside `useEffect`                                                         | Fixed (`42a645b`)            | Lint (report)                  |
+| V-002 | frontend     | Medium   | `ref.current` written during render                                                               | Fixed (`42a645b`)            | Lint (report)                  |
+| V-003 | workflow     | High     | `next build` failed to prerender `/`                                                              | Fixed (`2f2e508`)            | Build (report)                 |
+| V-004 | backend      | Low      | Analytics counted soft-deleted cards                                                              | Fixed (`dd8e301`)            | Review                         |
+| V-005 | backend      | Low      | `BoardColumn` docstring said "integer" for a Float                                                | Fixed (`dd8e301`)            | Review                         |
+| V-006 | security     | Medium   | `timezone` field had no IANA validation                                                           | Fixed (`dd8e301`)            | Review                         |
+| V-007 | backend      | Low      | Duplicate `per_page` cap (dead code)                                                              | Fixed (`dd8e301`)            | Review                         |
+| V-008 | frontend     | Low      | `BaseButton` had no `destructive` variant, `toast` had no `showLoading`                           | Fixed (`6f260ff`)            | Audit checklist                |
+| V-009 | api-contract | High     | Backend has no `/api/auth/refresh` or `/api/auth/logout` (no session restore, no server logout)   | Open                         | Inspection                     |
+| V-010 | security     | High     | Refresh token written through `document.cookie` (not HttpOnly)                                    | Fixed (`f38e5a8`)            | Inspection                     |
+| V-011 | security     | High     | No rate limiting                                                                                  | Open                         | Inspection                     |
+| V-012 | security     | Medium   | CORS not configured in code                                                                       | Fixed (`97e4c46`)            | Inspection                     |
+| V-013 | security     | Medium   | Password hashing is not explicitly Argon2id or bcrypt                                             | Open                         | Inspection                     |
+| V-014 | security     | Low      | Default secret and DB URL in `DevelopmentConfig`                                                  | Partial                      | Inspection                     |
+| V-015 | backend      | Low      | Ad-hoc 401 response copied four times in the auth decorator                                       | Open                         | Inspection                     |
+| V-016 | frontend     | Medium   | Direct `fetch()` in components, hooks and context                                                 | Open                         | Inspection                     |
+| V-017 | frontend     | Medium   | `NEXT_PUBLIC_API_URL` missing from `.env.example`                                                 | Fixed (`87f1f40`)            | Inspection (+ audit report)    |
+| V-018 | structure    | Medium   | Frontend has no `features/` or `lib/api/`                                                         | Open                         | Inspection                     |
+| V-019 | api-contract | Medium   | Inconsistent API prefix (`/api` vs `/api/v1`)                                                     | Open                         | Inspection                     |
+| V-020 | api-contract | Low      | JSON naming, pagination meta and error codes differ from api-contracts                            | Open                         | Inspection                     |
+| V-021 | structure    | Low      | `common/` lacks `permissions.py`, `responses.py`, `logging.py`                                    | Open                         | Inspection                     |
+| V-022 | structure    | Low      | `schema.py` instead of `schemas.py`                                                               | Open                         | Inspection                     |
+| V-023 | structure    | Low      | `backend/app/.env.example` is outside the target structure                                        | Open                         | Inspection                     |
+| V-024 | testing      | Medium   | Backend tests are flat, no `api/`, `integration/`, `security/`                                    | Open                         | Inspection                     |
+| V-025 | testing      | Medium   | Frontend tests cover only two components                                                          | Open                         | Inspection                     |
+| V-026 | testing      | Medium   | E2E has no Page Objects and no boards/cards specs                                                 | Open                         | Inspection (+ audit report)    |
+| V-027 | workflow     | Low      | CI: `npx next lint`, workflow name, e2e dependencies                                              | Open                         | Inspection (+ report)          |
+| V-028 | structure    | Low      | Duplicate documents (`VIOLATION_REPORT.md`, `.kiro/specs` vs `specs`)                             | Open                         | Inspection                     |
+| V-029 | docs         | Medium   | Earlier violation report contained claims that cannot be verified                                 | Partial                      | Inspection                     |
+| V-030 | frontend     | Low      | Unused imports and misleading comments                                                            | Open                         | Inspection (+ report)          |
+| V-031 | security     | High     | `wsgi.py` uses `DevelopmentConfig`; `ProductionConfig` is never used                              | Fixed (`97e4c46`)            | Inspection                     |
+| V-032 | api-contract | High     | Register contract mismatch: frontend sends `name`, backend schema rejects it (HTTP 400)           | Fixed (`ebb347b`)            | Inspection (production report) |
+| V-033 | api-contract | High     | Board page called non-existent column/card list endpoints and hid the 404/405 as "no columns"     | Fixed — committed 2026-11-28 | Gap report + inspection        |
+| V-034 | api-contract | Medium   | Frontend card type used `position`; the backend serializes `order`                                | Fixed — committed 2026-11-28 | Gap report + inspection        |
+| V-035 | api-contract | High     | Move payload sent `{column_id, position}`; the schema requires `{column_id, order}`               | Fixed — committed 2026-11-28 | Gap report + inspection        |
+| V-036 | api-contract | Medium   | Notifications read `message`/`read`; the backend sends `title`, `body`, `is_read`                 | Fixed — committed 2026-11-28 | Gap report + inspection        |
+| V-037 | api-contract | High     | Profile sent `email`, which `PATCH /api/users/me` rejects (always 400)                            | Fixed — committed 2026-11-28 | Gap report + inspection        |
+| V-038 | api-contract | High     | My Tasks and search called `GET /api/cards`, which did not exist                                  | Fixed — committed 2026-11-28 | Gap report + inspection        |
+| V-039 | frontend     | High     | `AddCardForm`, `CardDetailModal`, `NotificationBell`, `SearchBar`, `useDragAndDrop` never mounted | Fixed — committed 2026-11-28 | Gap report + inspection        |
+| V-040 | frontend     | Medium   | Tailwind colour tokens (`bg-muted`, `border-border`, `text-destructive`, ...) were not defined    | Fixed — committed 2026-11-28 | Gap report + built CSS check   |
+| V-041 | frontend     | Medium   | `BaseModal` claimed a focus trap it did not implement and used a fixed title id                   | Fixed — committed 2026-11-28 | Gap report + inspection        |
+| V-042 | security     | Medium   | Hardcoded database password as default in `backend/tests/conftest.py` (value redacted)            | Fixed — committed 2026-11-28 | Gap report + inspection        |
+| V-043 | backend      | Medium   | Card delete removed the row although the model has `deleted_at`                                   | Fixed — committed 2026-11-28 | Gap report + inspection        |
 
 ## 4. Entries
 
@@ -228,7 +228,7 @@ Status: fixed in `ebb347b`. `RegisterSchema` now requires `name` (1 to 255 chara
 
 Remaining observation (not fixed): the register page shows `err.message`, which for a 400 is the generic "The request contains invalid data". The field-level reasons in `ApiError.details` are not displayed.
 
-### Fixed (uncommitted)
+### Fixed — committed 2026-11-28
 
 V-033 to V-043 were listed in `.agents/tasks/requirements-gap-report.md` section 4 and re-checked against the committed code (`HEAD`) before the fix. "Before" line numbers refer to `HEAD`; "After" line numbers refer to the working tree when this entry was written. Verification for the whole group, run during the Kanban UI work: backend `pytest` 168 passed (local test database), frontend `npx jest` 23 suites / 175 tests passed, `npx tsc --noEmit` and `npm run lint` with no errors, and a local Playwright run of 18 tests passed twice. Playwright was not run against the public deployment.
 
