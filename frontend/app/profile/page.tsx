@@ -1,7 +1,7 @@
 "use client";
 
 import { type FormEvent, useEffect, useId, useState } from "react";
-import { User as UserIcon } from "lucide-react";
+import { FolderKanban, Globe, Lock, Sprout } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { updateProfile as updateProfileRequest } from "@/lib/services/usersService";
@@ -9,8 +9,6 @@ import { ApiError } from "@/lib/errors";
 import type { User } from "@/lib/types/api";
 import { BaseButton } from "@/components/shared/BaseButton";
 import { getInitials } from "@/lib/initials";
-import { BoardBgWrapper } from "@/components/board/BoardBgWrapper";
-import { PageHeader } from "@/components/shared/PageHeader";
 
 const MAX_NAME_LENGTH = 255;
 /** Show the polite remaining-characters message only this close to the limit. */
@@ -107,63 +105,118 @@ function ProfileForm({ user, token }: { user: User; token: string }) {
     }
   }
 
+  const displayName = user.name?.trim() || user.email.split("@")[0] || "User";
+  const workspaceLabel = `${displayName}'s workspace`;
+
   const inputClasses =
-    "rounded-lg border bg-background px-4 py-2.5 text-sm text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
+    "h-10 w-full rounded-lg border bg-white px-3.5 text-sm text-[#162B22] transition-colors focus:border-[#16382C] focus:outline-none disabled:cursor-not-allowed disabled:opacity-60";
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-8">
-      {submitError && (
-        <div
-          role="alert"
-          className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3.5 text-sm text-destructive"
-        >
-          {submitError}
+    <div className="flex w-full flex-1 flex-col gap-5">
+      {/* 1. Hero Banner (Sage Green Card) */}
+      <section
+        aria-label="Profile overview"
+        className="flex flex-col justify-between gap-4 rounded-2xl bg-[#DCE5CC] px-7 py-6 sm:flex-row sm:items-center"
+      >
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4E6356]">
+            YOUR SPACE
+          </p>
+          <h1 className="mt-1 truncate font-serif text-3xl italic tracking-tight text-[#162B22] sm:text-[34px] sm:leading-tight">
+            Your profile
+          </h1>
+          <p className="mt-1.5 text-[13px] text-[#3F5347]">
+            A little about you. Make yourself at home.
+          </p>
         </div>
-      )}
-      {status && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="rounded-lg border border-green-300 bg-green-50 px-4 py-3.5 text-sm text-green-800"
-        >
-          {status}
-        </div>
-      )}
 
-      {/* User identity card */}
-      <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-6">
-        <div className="flex items-center gap-4">
-          <div
-            aria-hidden="true"
-            className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/70 text-xl font-bold text-primary-foreground shadow-sm"
-          >
-            {getInitials(user.name, user.email)}
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-lg font-semibold text-foreground">
-              {user.name?.trim() || user.email}
-            </p>
-            <p className="truncate text-sm text-muted-foreground">{user.email}</p>
-          </div>
+        <div className="inline-flex w-fit shrink-0 items-center gap-2 rounded-full bg-white/95 px-3.5 py-2 text-xs font-medium text-[#162B22] shadow-2xs">
+          <FolderKanban size={14} strokeWidth={1.75} aria-hidden="true" />
+          <span>{workspaceLabel}</span>
         </div>
+      </section>
+
+      {/* 2. Sub-bar Tab */}
+      <div className="flex flex-wrap items-center gap-6 border-b border-[#E6E8E3]">
+        <span className="inline-flex items-center border-b-2 border-[#16382C] pb-3 text-[13px] font-semibold text-[#162B22]">
+          Account
+        </span>
+        <span className="pb-3 text-xs text-[#7C8680]">
+          Manage your personal information and preferences.
+        </span>
       </div>
 
-      {/* Account details section */}
-      <div className="flex flex-col gap-6">
-        <div>
-          <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Account Details
-          </h3>
-          <div className="flex flex-col gap-5">
-            <div className="flex flex-col gap-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">User ID</span>
-              <p className="truncate rounded-lg border border-border/50 bg-muted/30 px-3 py-2 font-mono text-sm text-foreground">
-                {user.id}
+      {/* 3. Main 2-Column Layout */}
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
+        {/* Left Column: Account Details Form */}
+        <form
+          onSubmit={handleSubmit}
+          noValidate
+          className="flex flex-col gap-5 rounded-2xl border border-[#E6E8E3] bg-white p-6"
+        >
+          <div>
+            <h2 className="text-base font-semibold text-[#162B22]">
+              Account details
+            </h2>
+            <p className="mt-0.5 text-xs text-[#6E7A73]">
+              The essentials that make this workspace yours.
+            </p>
+          </div>
+
+          {submitError && (
+            <div
+              role="alert"
+              className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive"
+            >
+              {submitError}
+            </div>
+          )}
+
+          {status && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="rounded-lg border border-[#C3D8C8] bg-[#EEF5EE] px-4 py-3 text-xs font-medium text-[#1D4E38]"
+            >
+              {status}
+            </div>
+          )}
+
+          <div className="flex flex-col gap-4">
+            {/* User ID */}
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor={`${baseId}-user-id`}
+                className="text-xs font-medium text-[#162B22]"
+              >
+                User ID
+              </label>
+              <div className="relative flex items-center">
+                <input
+                  id={`${baseId}-user-id`}
+                  type="text"
+                  value={user.id}
+                  readOnly
+                  className="h-10 w-full cursor-not-allowed rounded-lg border border-[#ECEEE9] bg-[#F7F8F5] pr-9 pl-3.5 text-xs text-[#7C8680] focus:outline-none"
+                />
+                <Lock
+                  size={13}
+                  strokeWidth={1.75}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute right-3 text-[#8C9590]"
+                />
+              </div>
+              <p className="text-[11px] text-[#7C8680]">
+                Your unique account identifier.
               </p>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <label htmlFor={`${baseId}-name`} className="text-sm font-medium text-foreground">
+            {/* Display Name */}
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor={`${baseId}-name`}
+                className="text-xs font-medium text-[#162B22]"
+              >
                 Display Name
               </label>
               <input
@@ -183,43 +236,62 @@ function ProfileForm({ user, token }: { user: User; token: string }) {
                     ? `${baseId}-name-count ${baseId}-name-error`
                     : `${baseId}-name-count`
                 }
-                className={`${inputClasses} ${fieldErrors.name ? "border-destructive" : "border-border"}`}
+                className={`${inputClasses} ${
+                  fieldErrors.name ? "border-destructive" : "border-[#DCDFD8]"
+                }`}
               />
-              <div className="flex items-center justify-between">
-                <p id={`${baseId}-name-count`} className="text-xs text-muted-foreground">
-                  {name.length} / {MAX_NAME_LENGTH} characters
-                </p>
-              </div>
+              <p id={`${baseId}-name-count`} className="text-[11px] text-[#7C8680]">
+                {name.length} / {MAX_NAME_LENGTH} characters
+              </p>
               {name.length >= NAME_WARN_THRESHOLD && (
                 <p role="status" className="sr-only">
                   {Math.max(MAX_NAME_LENGTH - name.length, 0)} characters remaining
                 </p>
               )}
               {fieldErrors.name && (
-                <p id={`${baseId}-name-error`} role="alert" className="text-xs text-destructive">
+                <p
+                  id={`${baseId}-name-error`}
+                  role="alert"
+                  className="text-xs text-destructive"
+                >
                   {fieldErrors.name}
                 </p>
               )}
             </div>
 
-            <div className="flex flex-col gap-2">
-              <label htmlFor={`${baseId}-email`} className="text-sm font-medium text-foreground">
+            {/* Email Address */}
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor={`${baseId}-email`}
+                className="text-xs font-medium text-[#162B22]"
+              >
                 Email Address
               </label>
-              <input
-                id={`${baseId}-email`}
-                type="email"
-                value={user.email}
-                readOnly
-                className={`${inputClasses} border-border/50 bg-muted/50 cursor-not-allowed`}
-              />
-              <p className="text-xs text-muted-foreground">Email address cannot be changed.</p>
+              <div className="relative flex items-center">
+                <input
+                  id={`${baseId}-email`}
+                  type="email"
+                  value={user.email}
+                  readOnly
+                  className="h-10 w-full cursor-not-allowed rounded-lg border border-[#ECEEE9] bg-[#F7F8F5] pr-9 pl-3.5 text-xs text-[#7C8680] focus:outline-none"
+                />
+                <Lock
+                  size={13}
+                  strokeWidth={1.75}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute right-3 text-[#8C9590]"
+                />
+              </div>
+              <p className="text-[11px] text-[#7C8680]">
+                Email address cannot be changed.
+              </p>
             </div>
 
-            <div className="flex flex-col gap-2">
+            {/* Timezone */}
+            <div className="flex flex-col gap-1.5">
               <label
                 htmlFor={`${baseId}-timezone`}
-                className="text-sm font-medium text-foreground"
+                className="text-xs font-medium text-[#162B22]"
               >
                 Timezone
               </label>
@@ -232,8 +304,12 @@ function ProfileForm({ user, token }: { user: User; token: string }) {
                   setFieldErrors((f) => ({ ...f, timezone: undefined }));
                 }}
                 aria-invalid={fieldErrors.timezone !== undefined}
-                aria-describedby={fieldErrors.timezone ? `${baseId}-timezone-error` : undefined}
-                className={`${inputClasses} ${fieldErrors.timezone ? "border-destructive" : "border-border"}`}
+                aria-describedby={
+                  fieldErrors.timezone ? `${baseId}-timezone-error` : undefined
+                }
+                className={`${inputClasses} ${
+                  fieldErrors.timezone ? "border-destructive" : "border-[#DCDFD8]"
+                }`}
               >
                 {timezoneOptions(user.timezone).map((tz) => (
                   <option key={tz} value={tz}>
@@ -241,6 +317,9 @@ function ProfileForm({ user, token }: { user: User; token: string }) {
                   </option>
                 ))}
               </select>
+              <p className="text-[11px] text-[#7C8680]">
+                Dates and times are shown in your local timezone.
+              </p>
               {fieldErrors.timezone && (
                 <p
                   id={`${baseId}-timezone-error`}
@@ -252,33 +331,84 @@ function ProfileForm({ user, token }: { user: User; token: string }) {
               )}
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Action buttons */}
-      <div className="flex flex-wrap items-center gap-3 border-t border-border/50 pt-6">
-        <BaseButton
-          type="submit"
-          disabled={isSubmitting || !isDirty}
-          aria-describedby={!isDirty ? `${baseId}-save-help` : undefined}
-          className="min-w-[120px]"
-        >
-          {isSubmitting ? "Saving…" : "Save changes"}
-        </BaseButton>
-        <BaseButton
-          variant="secondary"
-          disabled={isSubmitting || !isDirty}
-          onClick={handleReset}
-        >
-          Reset
-        </BaseButton>
-        {!isDirty && (
-          <p id={`${baseId}-save-help`} className="text-sm text-muted-foreground">
-            No changes to save
-          </p>
-        )}
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2.5 border-t border-[#F0F1ED] pt-4">
+            <BaseButton
+              type="submit"
+              size="sm"
+              disabled={isSubmitting || !isDirty}
+              aria-describedby={!isDirty ? `${baseId}-save-help` : undefined}
+              className="cursor-pointer"
+            >
+              {isSubmitting ? "Saving…" : "Save changes"}
+            </BaseButton>
+            <BaseButton
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={isSubmitting || !isDirty}
+              onClick={handleReset}
+              className="cursor-pointer"
+            >
+              Reset
+            </BaseButton>
+            {!isDirty && (
+              <p id={`${baseId}-save-help`} className="text-xs text-[#7C8680]">
+                No changes to save
+              </p>
+            )}
+          </div>
+        </form>
+
+        {/* Right Column: Identity Summary & Tip Card */}
+        <aside className="flex flex-col gap-4">
+          <div className="rounded-2xl border border-[#E6E8E3] bg-white p-6">
+            <div className="flex items-center gap-3.5 border-b border-[#F0F1ED] pb-4">
+              <div
+                aria-hidden="true"
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#DCE5CC] text-base font-semibold text-[#162B22]"
+              >
+                {getInitials(user.name, user.email)}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[#162B22]">
+                  {displayName}
+                </p>
+                <p className="truncate text-xs text-[#6E7A73]">{user.email}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2.5">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#7C8680]">
+                  YOUR WORKSPACE
+                </p>
+                <p className="mt-1 text-sm font-semibold text-[#162B22]">
+                  {workspaceLabel}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1 text-xs text-[#4E6356]">
+                <Globe size={13} strokeWidth={1.75} aria-hidden="true" />
+                <span>{timezone}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-[#EEF2E6] p-6">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#162B22]">
+              <Sprout size={15} strokeWidth={1.75} aria-hidden="true" />
+              <span>A little more you.</span>
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-[#4E6356]">
+              Keep your name up to date so your team knows who&apos;s moving
+              things forward.
+            </p>
+          </div>
+        </aside>
       </div>
-    </form>
+    </div>
   );
 }
 
@@ -291,29 +421,19 @@ export default function ProfilePage() {
   const { currentUser } = useAuth();
 
   return (
-    <BoardBgWrapper className="flex flex-1 flex-col">
-      <PageHeader
-        title="Profile"
-        description="Update your account details."
-        icon={<UserIcon size={16} strokeWidth={1.5} />}
-      />
-      <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-2xl">
-          {isAuthLoading || !token || !currentUser ? (
-            <div
-              className="flex flex-col gap-6"
-              aria-busy="true"
-              aria-label="Loading profile"
-            >
-              <div className="h-32 animate-pulse rounded-xl border border-border/50 bg-muted" />
-              <div className="h-20 animate-pulse rounded-xl border border-border/50 bg-muted" />
-              <div className="h-20 animate-pulse rounded-xl border border-border/50 bg-muted" />
-            </div>
-          ) : (
-            <ProfileForm user={currentUser} token={token} />
-          )}
+    <div className="flex min-h-full w-full flex-1 flex-col px-4 py-5 sm:px-6 lg:px-8">
+      {isAuthLoading || !token || !currentUser ? (
+        <div
+          className="flex flex-col gap-6"
+          aria-busy="true"
+          aria-label="Loading profile"
+        >
+          <div className="h-32 animate-pulse rounded-2xl bg-[#DCE5CC]/70" />
+          <div className="h-64 animate-pulse rounded-2xl border border-[#E6E8E3] bg-white" />
         </div>
-      </main>
-    </BoardBgWrapper>
+      ) : (
+        <ProfileForm user={currentUser} token={token} />
+      )}
+    </div>
   );
 }

@@ -14,7 +14,7 @@ interface BaseButtonProps
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    "bg-[var(--brand)] text-white hover:bg-[var(--brand-hover)] focus-visible:ring-[var(--brand)] disabled:bg-[var(--brand-light)]",
+    "bg-[#16382C] text-white shadow-2xs hover:bg-[#1E4A3B] focus-visible:ring-[#16382C] disabled:bg-[#16382C]/60",
   secondary:
     "bg-[var(--bg-panel)] text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-hover)] focus-visible:ring-[var(--border)] disabled:text-[var(--text-muted)] disabled:border-[var(--border)]",
   danger:
@@ -28,8 +28,8 @@ const variantClasses: Record<ButtonVariant, string> = {
 
 // 44px minimum touch target below the `sm` breakpoint.
 const sizeClasses: Record<ButtonSize, string> = {
-  md: "min-h-11 px-4 py-2 sm:min-h-0",
-  sm: "min-h-11 px-3 py-1.5 text-xs sm:min-h-0",
+  md: "min-h-11 px-4 py-2 text-sm sm:min-h-0",
+  sm: "min-h-11 h-8.5 px-3.5 text-xs sm:min-h-0",
   icon: "min-h-11 min-w-11 p-2 sm:min-h-0 sm:min-w-0",
 };
 
@@ -46,8 +46,8 @@ export function BaseButton({
       {...rest}
       type={type}
       className={[
-        "inline-flex items-center justify-center rounded-md",
-        "text-sm font-medium",
+        "inline-flex items-center justify-center gap-1.5 rounded-lg",
+        "font-medium",
         "transition-colors duration-150",
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
         "disabled:cursor-not-allowed disabled:opacity-60",

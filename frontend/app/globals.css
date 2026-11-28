@@ -99,9 +99,11 @@ body {
 .list-prio-dot[data-priority="high"] {
   color: var(--prio-high);
 }
+
 .list-prio-dot[data-priority="medium"] {
   color: var(--prio-medium);
 }
+
 .list-prio-dot[data-priority="low"] {
   color: var(--prio-low);
 }
@@ -112,6 +114,7 @@ body {
 
 /* ---- 768–1279px: sidebar collapses to icon-only (56px) ---- */
 @media (max-width: 1279px) {
+
   /* Force sidebar to icon-only width */
   [data-layout] aside {
     width: 56px;
@@ -144,12 +147,9 @@ body {
   }
 
   /* Hide the workspace text in the workspace header */
-  [data-layout] aside > div > span.min-w-0 {
+  [data-layout] aside>div>span.min-w-0 {
     display: none;
   }
-
-  /* Toolbar: hide text labels on Filter/Sort/Group buttons — keep icons */
-  /* (Already handled via hidden sm:inline in FilterBar; this is a belt-and-suspenders guard) */
 }
 
 /* ---- <768px: hide icon rail and sidebar entirely ---- */
@@ -168,15 +168,14 @@ body {
   }
 
   /* Board main area takes full width */
-  [data-layout] > main {
+  [data-layout]>main {
     width: 100%;
   }
 }
 
-/* Done-card strikethrough (applied via data attribute from BoardCard) */
+/* Done status without strikethrough */
 [data-done="true"] {
-  text-decoration: line-through;
-  color: var(--text-muted);
+  text-decoration: none;
 }
 
 /* Auth page background tokens */
@@ -210,16 +209,12 @@ body {
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(
-      ellipse 60% 100% at 20% 0%,
+    radial-gradient(ellipse 60% 100% at 20% 0%,
       var(--auth-mint) 0%,
-      transparent 100%
-    ),
-    radial-gradient(
-      ellipse 55% 100% at 100% 0%,
+      transparent 100%),
+    radial-gradient(ellipse 55% 100% at 100% 0%,
       var(--auth-aqua) 0%,
-      transparent 100%
-    ),
+      transparent 100%),
     linear-gradient(180deg, transparent 0%, var(--auth-base) 100%);
 }
 
@@ -238,20 +233,16 @@ body {
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(
-      ellipse 60% 100% at 20% 0%,
+    radial-gradient(ellipse 60% 100% at 20% 0%,
       var(--auth-mint) 0%,
-      transparent 100%
-    ),
-    radial-gradient(
-      ellipse 55% 100% at 100% 0%,
+      transparent 100%),
+    radial-gradient(ellipse 55% 100% at 100% 0%,
       var(--auth-aqua) 0%,
-      transparent 100%
-    ),
+      transparent 100%),
     linear-gradient(180deg, transparent 0%, var(--auth-base) 100%);
 }
 
-.page-bg > * {
+.page-bg>* {
   position: relative;
   z-index: 1;
 }
@@ -271,8 +262,6 @@ body {
 }
 
 /* ── Per-preset CSS variable blocks ── */
-/* Each block sets --bg-1, --bg-2 (light) and optionally --bg-mid (dark only). */
-
 [data-board-bg="mint"] {
   --bg-1: #beefd9;
   --bg-2: #d3f1f2;
@@ -315,16 +304,13 @@ body {
   flex: 1;
   min-height: 100%;
   overflow-x: hidden;
-  background: linear-gradient(
-      160deg,
+  background: linear-gradient(160deg,
       var(--bg-1, #beefd9),
-      var(--bg-2, #d3f1f2)
-    )
-    fixed;
+      var(--bg-2, #d3f1f2)) fixed;
 }
 
 /* Semi-transparent frosted header strip (applied to <header> inside .board-bg) */
-.board-bg > .board-page-header {
+.board-bg>.board-page-header {
   position: sticky;
   top: 0;
   z-index: 10;
@@ -353,7 +339,8 @@ body {
     border-radius: 12px 12px 0 0;
     overflow: hidden;
   }
-  .bg-picker-popover > div {
+
+  .bg-picker-popover>div {
     width: 100%;
     border-radius: 12px 12px 0 0;
   }
@@ -365,7 +352,6 @@ body {
    Each color = background pill for the column title.
    ============================================================ */
 
-/* Color tokens for column status pills */
 :root {
   --col-gray-bg: #eaecef;
   --col-gray-fg: #5b6270;
@@ -379,50 +365,55 @@ body {
   --col-red-fg: #c0151d;
 }
 
-/* The column title button gets the pill look via its parent header's data-status */
 [data-status="gray"] .col-status-pill {
   background: var(--col-gray-bg);
   color: var(--col-gray-fg);
 }
+
 [data-status="blue"] .col-status-pill {
   background: var(--col-blue-bg);
   color: var(--col-blue-fg);
 }
+
 [data-status="orange"] .col-status-pill {
   background: var(--col-orange-bg);
   color: var(--col-orange-fg);
 }
+
 [data-status="green"] .col-status-pill {
   background: var(--col-green-bg);
   color: var(--col-green-fg);
 }
+
 [data-status="red"] .col-status-pill {
   background: var(--col-red-bg);
   color: var(--col-red-fg);
 }
 
-/* Left accent bar on the column container matching the status color */
 [data-status="gray"] .col-accent-bar {
   background: var(--col-gray-fg);
 }
+
 [data-status="blue"] .col-accent-bar {
   background: var(--col-blue-fg);
 }
+
 [data-status="orange"] .col-accent-bar {
   background: var(--col-orange-fg);
 }
+
 [data-status="green"] .col-accent-bar {
   background: var(--col-green-fg);
 }
+
 [data-status="red"] .col-accent-bar {
   background: var(--col-red-fg);
 }
 
 /* ============================================================
-   Card drag & drop effects (§4.5)
+   Card & Column drag & drop effects (§4.5)
    ============================================================ */
 
-/* Ghost placeholder — dashed slot where the card originally was */
 li[data-placeholder="true"] {
   min-height: 60px;
   border-radius: var(--radius-card);
@@ -430,14 +421,12 @@ li[data-placeholder="true"] {
   background: var(--bg-hover);
 }
 
-/* Card hover — stronger border + shadow + slight lift */
 article.board-card:hover {
   border-color: var(--border-strong);
   box-shadow: 0 4px 12px rgba(16, 24, 40, 0.1);
   transform: translateY(-1px);
 }
 
-/* Card at rest — smooth return */
 article.board-card {
   transition:
     transform 150ms ease-out,
@@ -445,7 +434,12 @@ article.board-card {
     border-color 150ms ease-out;
 }
 
-/* Tilted drag image clone — class applied by onDragStart before setDragImage */
+section[data-dragging="true"] {
+  transform: rotate(1.5deg);
+  box-shadow: var(--shadow-drag);
+  opacity: 0.72;
+}
+
 .drag-tilt-clone {
   transform: rotate(2deg) scale(1.02);
   box-shadow: var(--shadow-drag);
@@ -454,4 +448,29 @@ article.board-card {
   position: fixed;
   top: -1000px;
   left: -1000px;
+}
+
+/* Dashboard reference layout */
+.dashboard-bg {
+  background: #faf9f6 !important;
+  color: #24483d;
+}
+
+.dashboard-bg::before {
+  display: none !important;
+}
+
+.dashboard-content {
+  background: #faf9f6;
+}
+
+.dashboard-bg .board-page-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  min-height: 48px;
+  height: 48px;
+  background: #faf9f6;
+  border-bottom: 1px solid #e9e8e1;
+  backdrop-filter: none;
 }

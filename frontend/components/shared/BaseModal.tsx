@@ -114,7 +114,7 @@ export function BaseModal({
   return (
     /* Backdrop */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#162B22]/45 p-4 backdrop-blur-[1px]"
       onClick={onClose}
     >
       {/* Panel — stop backdrop click from bubbling through the panel */}
@@ -126,7 +126,8 @@ export function BaseModal({
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
         className={[
-          "relative w-full rounded-lg bg-background shadow-xl",
+          "relative w-full overflow-hidden rounded-xl border border-[#D5DDD0]",
+          "bg-[#FAF9F6] text-[#173B30] shadow-[0_18px_40px_rgba(22,43,34,0.18)]",
           "focus:outline-none",
           "flex flex-col max-h-[90dvh]",
           maxWidth,
@@ -134,10 +135,10 @@ export function BaseModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+        <div className="flex items-center justify-between border-b border-[#DCE4D7] bg-[#EBF0E2] px-6 py-4">
           <h2
             id={titleId}
-            className="text-base font-semibold text-foreground"
+            className="font-serif text-lg font-semibold italic tracking-tight text-[#162B22]"
           >
             {title}
           </h2>
@@ -147,7 +148,7 @@ export function BaseModal({
             type="button"
             onClick={onClose}
             aria-label="Close modal"
-            className="rounded p-1 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded-lg p-1.5 text-[#526D5C] transition-colors hover:bg-[#DCE5CC] hover:text-[#162B22] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#16382C]"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -162,9 +163,9 @@ export function BaseModal({
         </div>
 
         {/* Scrollable body */}
-        <div className="overflow-y-auto px-6 py-4">
+        <div className="overflow-y-auto bg-[#FAF9F6] px-6 py-4">
           {description && (
-            <p id={descriptionId} className="mb-3 text-sm text-muted-foreground">
+            <p id={descriptionId} className="mb-3 text-sm text-[#63756B]">
               {description}
             </p>
           )}

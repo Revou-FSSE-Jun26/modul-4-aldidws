@@ -1,5 +1,6 @@
 "use client";
 import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export interface ActionMenuItem {
   id: string;
@@ -39,24 +40,28 @@ export interface ActionMenuProps {
  * first enabled item; arrows move, Escape and outside click close, Tab closes
  * and returns focus to the trigger.
  */
-export function ActionMenu({ label, items, symbol = "\u2026", symbolNode, triggerClassName = "" }: ActionMenuProps) {
+export function ActionMenu({
+  label,
+  items,
+  symbol = "\u2026",
+  symbolNode,
+  triggerClassName = "",
+}: ActionMenuProps) {
   const menuId = useId();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<React.CSSProperties>({});
-  // The menu is fixed to the viewport, anchored under the trigger. An absolute
-  // menu was clipped by the board's scrolling column list (overflow-x-auto also
-  // clips vertically), so lower items could not be clicked on short columns.
+
   useLayoutEffect(() => {
     if (!open) return;
     function place() {
       const rect = triggerRef.current?.getBoundingClientRect();
       if (!rect) return;
       setPosition({
-        top: rect.bottom,
+        top: rect.bottom + 4,
         right: document.documentElement.clientWidth - rect.right,
-        maxHeight: Math.max(window.innerHeight - rect.bottom, 0),
+        maxHeight: Math.max(window.innerHeight - rect.bottom - 8, 0),
       });
     }
     place();
@@ -95,7 +100,7 @@ export function ActionMenu({ label, items, symbol = "\u2026", symbolNode, trigge
     return () => document.removeEventListener("mousedown", handleOutside);
   }, [open]);
 
-  function close() {
+  function closeAndRestoreFocus() {
     setOpen(false);
     triggerRef.current?.focus();
   }
@@ -123,13 +128,64 @@ export function ActionMenu({ label, items, symbol = "\u2026", symbolNode, trigge
     } else if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      close();
+      closeAndRestoreFocus();
     } else if (event.key === "Tab") {
-      // Focus the trigger first so the browser's Tab moves on from it.
       setOpen(false);
       triggerRef.current?.focus();
     }
   }
+
+  const menuDropdown =
+    open && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            id={menuId}
+            ref={menuRef}
+            role="menu"
+            aria-label={label}
+            onKeyDown={handleMenuKeyDown}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            style={position}
+            className="fixed z-50 flex min-w-44 flex-col gap-0.5 overflow-y-auto rounded-xl border border-[#D5DDD0] bg-[#FAF9F6] p-1.5 text-[#1A2E26] shadow-[var(--shadow-drag)]"
+          >
+            {items.map((item) => {
+              const isCheckedRadio =
+                item.role === "menuitemradio" && Boolean(item.checked);
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role={item.role ?? "menuitem"}
+                  aria-checked={
+                    item.role === "menuitemradio"
+                      ? Boolean(item.checked)
+                      : undefined
+                  }
+                  data-value={item.value}
+                  disabled={item.disabled}
+                  tabIndex={-1}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpen(false);
+                    item.onSelect();
+                  }}
+                  className={[
+                    "cursor-pointer rounded-lg px-3 py-1.5 text-left text-xs font-medium transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8AA995] disabled:cursor-not-allowed disabled:opacity-50",
+                    isCheckedRadio
+                      ? "bg-[#DCE5CC] text-[#16382C] hover:bg-[#CFDAB9]"
+                      : "text-[#1A2E26] hover:bg-[#EBF0E2] hover:text-[#16382C]",
+                  ].join(" ")}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <div className="relative shrink-0">
@@ -140,10 +196,13 @@ export function ActionMenu({ label, items, symbol = "\u2026", symbolNode, trigge
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        onClick={() => setOpen((v) => !v)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
         onKeyDown={handleTriggerKeyDown}
         className={[
-          "flex items-center justify-center rounded-[var(--radius-ctrl)] border border-[var(--border)] bg-[var(--bg-panel)] text-[var(--text-muted)] transition-colors duration-150 hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)] focus-visible:ring-offset-2",
+          "flex cursor-pointer items-center justify-center rounded-[var(--radius-ctrl)] border border-[var(--border)] bg-[var(--bg-panel)] text-[var(--text-muted)] transition-colors duration-150 hover:bg-[#EBF0E2] hover:text-[#16382C] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8AA995] focus-visible:ring-offset-2",
           triggerClassName || "h-9 w-9",
         ]
           .filter(Boolean)
@@ -151,40 +210,7 @@ export function ActionMenu({ label, items, symbol = "\u2026", symbolNode, trigge
       >
         <span aria-hidden="true">{symbolNode ?? symbol}</span>
       </button>
-      {open && (
-        <div
-          id={menuId}
-          ref={menuRef}
-          role="menu"
-          aria-label={label}
-          onKeyDown={handleMenuKeyDown}
-          style={position}
-          className="fixed z-10 flex min-w-40 flex-col overflow-y-auto rounded-[var(--radius-ctrl)] border border-[var(--border)] bg-[var(--bg-panel)] p-1 shadow-[var(--shadow-drag)]"
-        >
-          {items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role={item.role ?? "menuitem"}
-              aria-checked={
-                item.role === "menuitemradio"
-                  ? Boolean(item.checked)
-                  : undefined
-              }
-              data-value={item.value}
-              disabled={item.disabled}
-              tabIndex={-1}
-              onClick={() => {
-                close();
-                item.onSelect();
-              }}
-              className="rounded px-3 py-1.5 text-left text-sm text-[var(--text-primary)] transition-colors duration-150 hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-light)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      )}
+      {menuDropdown}
     </div>
   );
 }

@@ -1,7 +1,5 @@
 import { Suspense } from "react";
-import { CheckSquare } from "lucide-react";
 import { MyTasksList } from "@/components/board/MyTasksList";
-import { BoardBgWrapper } from "@/components/board/BoardBgWrapper";
 import { PageHeader } from "@/components/shared/PageHeader";
 
 /**
@@ -16,38 +14,52 @@ import { PageHeader } from "@/components/shared/PageHeader";
  */
 export default function MyTasksPage() {
   return (
-    <BoardBgWrapper className="flex flex-1 flex-col">
+    <div className="flex min-h-screen flex-1 flex-col bg-[#FAF9F6] text-[#1A2E26]">
       <PageHeader
+        parent={{ label: "Workspace", href: "/" }}
         title="My Tasks"
-        description="Cards you created, grouped by board."
-        icon={<CheckSquare size={16} strokeWidth={1.5} />}
       />
-      <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-4xl">
+      <main className="flex w-full flex-1 flex-col px-6 pt-5 pb-4">
+        <div className="flex w-full flex-1 flex-col">
           <Suspense fallback={<MyTasksSkeleton />}>
             <MyTasksList />
           </Suspense>
         </div>
       </main>
-    </BoardBgWrapper>
+    </div>
   );
 }
 
 /** Skeleton shown while the client-side fetch is in flight. */
 function MyTasksSkeleton() {
   return (
-    <div className="flex flex-col gap-8" aria-busy="true" aria-label="Loading tasks">
-      {/* Stats skeleton */}
-      <div className="h-24 animate-pulse rounded-xl border border-border/50 bg-muted" aria-hidden="true" />
-      
-      {/* Task groups skeleton */}
+    <div
+      className="flex flex-col gap-5"
+      aria-busy="true"
+      aria-label="Loading tasks"
+    >
+      {/* Hero banner skeleton */}
+      <div
+        className="h-36 animate-pulse rounded-2xl bg-[#DCE5CC]/70"
+        aria-hidden="true"
+      />
+
+      {/* Tabs & toolbar skeleton */}
+      <div className="h-9 w-64 animate-pulse rounded-lg bg-[#EAECE6]" aria-hidden="true" />
+      <div className="h-9 w-full animate-pulse rounded-lg bg-[#EAECE6]/80" aria-hidden="true" />
+
+      {/* Task rows skeleton */}
       {Array.from({ length: 2 }).map((_, groupIdx) => (
-        <div key={groupIdx} className="flex flex-col gap-4" aria-hidden="true">
-          <div className="h-6 w-48 animate-pulse rounded bg-muted" />
-          {Array.from({ length: 3 }).map((_, cardIdx) => (
+        <div
+          key={groupIdx}
+          className="flex flex-col gap-2"
+          aria-hidden="true"
+        >
+          <div className="h-5 w-32 animate-pulse rounded bg-[#EAECE6]" />
+          {Array.from({ length: 3 }).map((__, cardIdx) => (
             <div
               key={cardIdx}
-              className="h-16 animate-pulse rounded-xl border border-border/50 bg-muted"
+              className="h-11 animate-pulse rounded-lg border border-[#ECEEE9] bg-white"
             />
           ))}
         </div>
