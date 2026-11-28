@@ -19,7 +19,6 @@ from app.common.exceptions import (
     UserNotFoundException,
 )
 from app.extensions import db
-from app.models.board import Board
 from app.models.board_column import BoardColumn
 from app.models.board_member import BoardMember
 from app.models.card import Card
@@ -44,9 +43,10 @@ def invite_member(current_user, board_id: uuid.UUID, email: str) -> BoardMember:
         ResourceConflictException: When the account is already a member.
     """
     board = get_board_for_user(current_user, board_id, write=True)
+    normalized_email = email.strip().lower()
 
     invitee = db.session.execute(
-        db.select(User).where(func.lower(User.email) == email)
+        db.select(User).where(func.lower(User.email) == normalized_email)
     ).scalar_one_or_none()
 
     if invitee is None:
