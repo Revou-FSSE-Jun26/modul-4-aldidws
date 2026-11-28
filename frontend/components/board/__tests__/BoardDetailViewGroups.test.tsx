@@ -111,7 +111,7 @@ beforeEach(() => {
   (dismissToast as jest.Mock).mockReset();
   mockUseAuth.mockReturnValue({
     token: "test-token",
-    isLoading: false,
+    isAuthLoading: false,
     currentUser: { id: "u-1", email: "a@b.co", name: "Ann", role: "user", timezone: "UTC" },
   });
 });

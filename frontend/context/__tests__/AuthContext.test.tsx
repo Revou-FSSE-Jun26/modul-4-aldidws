@@ -1,4 +1,4 @@
-import { act, render, renderHook, screen } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 
@@ -18,6 +18,13 @@ const loginBody = {
   },
 };
 
+const refreshBody = {
+  data: {
+    access_token: "refreshed-access-token",
+    user,
+  },
+};
+
 const fetchMock = jest.fn();
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -28,6 +35,19 @@ function okResponse(body: unknown) {
   return { ok: true, status: 200, json: async () => body };
 }
 
+function notOkResponse(status: number, code: string) {
+  return {
+    ok: false,
+    status,
+    json: async () => ({ error: { code, message: "error" } }),
+  };
+}
+
+// 204 No Content
+function noContentResponse() {
+  return { ok: true, status: 204, json: async () => ({}) };
+}
+
 describe("AuthProvider", () => {
   beforeEach(() => {
     fetchMock.mockReset();
@@ -36,46 +56,83 @@ describe("AuthProvider", () => {
     window.sessionStorage.clear();
   });
 
-  it("does not call fetch on mount", () => {
+  it("attempts a silent refresh on mount (calls /api/auth/refresh)", async () => {
+    // Mount resolves isAuthLoading after the refresh attempt settles.
+    fetchMock.mockResolvedValueOnce(notOkResponse(401, "MISSING_REFRESH_TOKEN"));
+
     render(
       <AuthProvider>
         <p>child</p>
       </AuthProvider>,
     );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/auth\/refresh$/);
     expect(screen.getByText("child")).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("starts logged out with isLoading false", () => {
+  it("starts with isAuthLoading true then sets it to false after refresh attempt", async () => {
+    fetchMock.mockResolvedValueOnce(notOkResponse(401, "MISSING_REFRESH_TOKEN"));
     const { result } = renderHook(() => useAuth(), { wrapper });
-    expect(result.current.isLoading).toBe(false);
+
+    // Initially loading
+    expect(result.current.isAuthLoading).toBe(true);
+
+    await waitFor(() => {
+      expect(result.current.isAuthLoading).toBe(false);
+    });
     expect(result.current.token).toBeNull();
     expect(result.current.currentUser).toBeNull();
   });
 
-  it("login sets token and user and stores nothing in cookies or web storage", async () => {
-    fetchMock.mockResolvedValue(okResponse(loginBody));
-    const cookieBefore = document.cookie;
+  it("restores session when refresh cookie is valid", async () => {
+    fetchMock.mockResolvedValueOnce(okResponse(refreshBody));
     const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isAuthLoading).toBe(false);
+    });
+
+    expect(result.current.token).toBe("refreshed-access-token");
+    expect(result.current.currentUser).toEqual(user);
+  });
+
+  it("login sets token and user and stores nothing in web storage", async () => {
+    // First call: mount refresh (fails — no cookie), second call: login
+    fetchMock
+      .mockResolvedValueOnce(notOkResponse(401, "MISSING_REFRESH_TOKEN"))
+      .mockResolvedValueOnce(okResponse(loginBody));
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    // Wait for auth loading to settle
+    await waitFor(() => {
+      expect(result.current.isAuthLoading).toBe(false);
+    });
 
     await act(async () => {
       await result.current.login("user@example.com", "password");
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/auth\/login$/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toMatch(/\/api\/auth\/login$/);
     expect(result.current.token).toBe("dummy-access-token");
     expect(result.current.currentUser).toEqual(user);
-    expect(result.current.isLoading).toBe(false);
-    expect(document.cookie).toBe(cookieBefore);
-    expect(document.cookie).not.toContain("refresh_token");
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
   });
 
   it("updateProfile merges name and timezone into the in-memory user only", async () => {
-    fetchMock.mockResolvedValue(okResponse(loginBody));
+    fetchMock
+      .mockResolvedValueOnce(notOkResponse(401, "MISSING_REFRESH_TOKEN"))
+      .mockResolvedValueOnce(okResponse(loginBody));
+
     const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current.isAuthLoading).toBe(false));
+
     await act(async () => {
       await result.current.login("user@example.com", "password");
     });
@@ -96,12 +153,13 @@ describe("AuthProvider", () => {
   });
 
   it("login rejects and keeps state empty when credentials are invalid", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 401,
-      json: async () => ({ error: { code: "UNAUTHORIZED" } }),
-    });
+    fetchMock
+      .mockResolvedValueOnce(notOkResponse(401, "MISSING_REFRESH_TOKEN"))
+      .mockResolvedValueOnce(notOkResponse(401, "INVALID_CREDENTIALS"));
+
     const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current.isAuthLoading).toBe(false));
 
     await act(async () => {
       await expect(
@@ -113,22 +171,48 @@ describe("AuthProvider", () => {
     expect(result.current.currentUser).toBeNull();
   });
 
-  it("logout clears state and makes no network request or cookie write", async () => {
-    fetchMock.mockResolvedValue(okResponse(loginBody));
+  it("logout calls /api/auth/logout and clears state", async () => {
+    fetchMock
+      .mockResolvedValueOnce(notOkResponse(401, "MISSING_REFRESH_TOKEN"))
+      .mockResolvedValueOnce(okResponse(loginBody))
+      .mockResolvedValueOnce(noContentResponse()); // logout
+
     const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current.isAuthLoading).toBe(false));
+
     await act(async () => {
       await result.current.login("user@example.com", "password");
     });
-    fetchMock.mockClear();
-    const cookieBefore = document.cookie;
 
     await act(async () => {
       await result.current.logout();
     });
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls[2][0]).toMatch(/\/api\/auth\/logout$/);
     expect(result.current.token).toBeNull();
     expect(result.current.currentUser).toBeNull();
-    expect(document.cookie).toBe(cookieBefore);
+  });
+
+  it("logout clears state even when backend call fails", async () => {
+    fetchMock
+      .mockResolvedValueOnce(notOkResponse(401, "MISSING_REFRESH_TOKEN"))
+      .mockResolvedValueOnce(okResponse(loginBody))
+      .mockRejectedValueOnce(new Error("Network error")); // logout fails
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current.isAuthLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.login("user@example.com", "password");
+    });
+
+    await act(async () => {
+      await result.current.logout();
+    });
+
+    expect(result.current.token).toBeNull();
+    expect(result.current.currentUser).toBeNull();
   });
 });

@@ -38,7 +38,7 @@ describe("BoardsGrid", () => {
   });
 
   it("shows loading state and does not redirect or fetch while auth loads", () => {
-    mockUseAuth.mockReturnValue({ token: null, isLoading: true });
+    mockUseAuth.mockReturnValue({ token: null, isAuthLoading: true });
     render(<BoardsGrid />);
     expect(screen.getByLabelText(/loading boards/i)).toBeInTheDocument();
     expect(mockReplace).not.toHaveBeenCalled();
@@ -46,7 +46,7 @@ describe("BoardsGrid", () => {
   });
 
   it("redirects to /login after auth finishes loading without a token", () => {
-    mockUseAuth.mockReturnValue({ token: null, isLoading: false });
+    mockUseAuth.mockReturnValue({ token: null, isAuthLoading: false });
     render(<BoardsGrid />);
     expect(mockReplace).toHaveBeenCalledTimes(1);
     expect(mockReplace).toHaveBeenCalledWith("/login");
@@ -55,7 +55,7 @@ describe("BoardsGrid", () => {
   });
 
   it("sends the Authorization header and renders boards", async () => {
-    mockUseAuth.mockReturnValue({ token: "test-token", isLoading: false });
+    mockUseAuth.mockReturnValue({ token: "test-token", isAuthLoading: false });
     fetchMock.mockResolvedValue(jsonResponse(200, { data: [board] }));
     render(<BoardsGrid />);
 
@@ -70,7 +70,7 @@ describe("BoardsGrid", () => {
   });
 
   it("shows the empty state when there are no boards", async () => {
-    mockUseAuth.mockReturnValue({ token: "test-token", isLoading: false });
+    mockUseAuth.mockReturnValue({ token: "test-token", isAuthLoading: false });
     fetchMock.mockResolvedValue(jsonResponse(200, { data: [] }));
     render(<BoardsGrid />);
     expect(
@@ -79,7 +79,7 @@ describe("BoardsGrid", () => {
   });
 
   it("shows an alert on a server error without redirecting", async () => {
-    mockUseAuth.mockReturnValue({ token: "test-token", isLoading: false });
+    mockUseAuth.mockReturnValue({ token: "test-token", isAuthLoading: false });
     fetchMock.mockResolvedValue(jsonResponse(500, {}));
     render(<BoardsGrid />);
     expect(await screen.findByRole("alert")).toHaveTextContent(/status 500/i);
@@ -87,7 +87,7 @@ describe("BoardsGrid", () => {
   });
 
   it("shows an alert on a network failure", async () => {
-    mockUseAuth.mockReturnValue({ token: "test-token", isLoading: false });
+    mockUseAuth.mockReturnValue({ token: "test-token", isAuthLoading: false });
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
     render(<BoardsGrid />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -96,7 +96,7 @@ describe("BoardsGrid", () => {
   });
 
   it("redirects to /login when the API returns 401", async () => {
-    mockUseAuth.mockReturnValue({ token: "expired", isLoading: false });
+    mockUseAuth.mockReturnValue({ token: "expired", isAuthLoading: false });
     fetchMock.mockResolvedValue(jsonResponse(401, {}));
     render(<BoardsGrid />);
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/login"));
@@ -105,7 +105,7 @@ describe("BoardsGrid", () => {
   // Rewritten: boards are now real links (accessible name = board name) rather
   // than "Open card" buttons that call router.push, so the click test checks the href.
   it("renders each board as a link to its detail page", async () => {
-    mockUseAuth.mockReturnValue({ token: "test-token", isLoading: false });
+    mockUseAuth.mockReturnValue({ token: "test-token", isAuthLoading: false });
     fetchMock.mockResolvedValue(jsonResponse(200, { data: [board] }));
     render(<BoardsGrid />);
     const link = await screen.findByRole("link", { name: "Board A" });
@@ -113,7 +113,7 @@ describe("BoardsGrid", () => {
   });
 
   it("mounts the create-board form, also when there are no boards", async () => {
-    mockUseAuth.mockReturnValue({ token: "test-token", isLoading: false });
+    mockUseAuth.mockReturnValue({ token: "test-token", isAuthLoading: false });
     fetchMock.mockResolvedValue(jsonResponse(200, { data: [] }));
     render(<BoardsGrid />);
     expect(
@@ -122,7 +122,7 @@ describe("BoardsGrid", () => {
   });
 
   it("creates a board with exactly {name} and shows it as a link", async () => {
-    mockUseAuth.mockReturnValue({ token: "test-token", isLoading: false });
+    mockUseAuth.mockReturnValue({ token: "test-token", isAuthLoading: false });
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
     render(<BoardsGrid />);
     await userEvent.click(await screen.findByRole("button", { name: "Create board" }));

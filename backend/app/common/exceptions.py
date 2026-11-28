@@ -58,6 +58,22 @@ class InvalidCredentialsError(AppException):
     message = "Invalid email or password"
 
 
+class MissingRefreshTokenError(AppException):
+    """Raised when no refresh token cookie is present on a refresh request."""
+
+    status_code = 401
+    error_code = "MISSING_REFRESH_TOKEN"
+    message = "No refresh token"
+
+
+class InvalidRefreshTokenError(AppException):
+    """Raised when the refresh token is invalid, revoked, or expired."""
+
+    status_code = 401
+    error_code = "INVALID_REFRESH_TOKEN"
+    message = "Refresh token is invalid or expired"
+
+
 class UnauthorizedError(AppException):
     """Raised when a valid token is absent or cannot be verified."""
 

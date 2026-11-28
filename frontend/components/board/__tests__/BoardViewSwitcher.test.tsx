@@ -97,7 +97,7 @@ describe("View switcher in BoardDetailView", () => {
     mockReplace.mockReset();
     fetchMock.mockReset();
     global.fetch = fetchMock as unknown as typeof fetch;
-    (useAuth as jest.Mock).mockReturnValue({ token: "tok", isLoading: false });
+    (useAuth as jest.Mock).mockReturnValue({ token: "tok", isAuthLoading: false });
   });
 
   it("renders Kanban and List buttons with aria-pressed, default kanban is pressed", async () => {

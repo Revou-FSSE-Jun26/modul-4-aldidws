@@ -33,7 +33,8 @@ def create_app(config_object: str | None = None) -> Flask:
     if hasattr(config_cls, "init_app"):
         config_cls.init_app(app)
 
-    # CORS: explicit allowlist. Auth uses the Bearer header, not cookies.
+    # CORS: explicit allowlist. Cookie-based refresh token requires
+    # supports_credentials=True (SameSite=None; Secure cross-origin flow).
     cors.init_app(
         app,
         resources={
@@ -41,7 +42,8 @@ def create_app(config_object: str | None = None) -> Flask:
                 "origins": app.config.get("CORS_ALLOWED_ORIGINS", []),
                 "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
                 "allow_headers": ["Content-Type", "Authorization"],
-                "supports_credentials": False,
+                "supports_credentials": True,
+                "expose_headers": ["Set-Cookie"],
                 "max_age": 600,
             }
         },

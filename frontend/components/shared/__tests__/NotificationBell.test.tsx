@@ -37,7 +37,7 @@ describe("NotificationBell", () => {
   beforeEach(() => {
     fetchMock.mockReset();
     global.fetch = fetchMock as unknown as typeof fetch;
-    mockUseAuth.mockReturnValue({ token: "tok", isLoading: false });
+    mockUseAuth.mockReturnValue({ token: "tok", isAuthLoading: false });
   });
 
   it("shows the unread count from meta.unread_count", async () => {
@@ -110,7 +110,7 @@ describe("NotificationBell", () => {
   });
 
   it("does not fetch when signed out", () => {
-    mockUseAuth.mockReturnValue({ token: null, isLoading: false });
+    mockUseAuth.mockReturnValue({ token: null, isAuthLoading: false });
     render(<NotificationBell />);
     expect(fetchMock).not.toHaveBeenCalled();
   });

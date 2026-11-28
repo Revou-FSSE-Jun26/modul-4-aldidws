@@ -15,7 +15,7 @@ export function useRequireAuth(): {
   token: string | null;
   isAuthLoading: boolean;
 } {
-  const { token, isLoading: isAuthLoading } = useAuth();
+  const { token, isAuthLoading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 

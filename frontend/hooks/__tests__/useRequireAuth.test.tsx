@@ -30,14 +30,14 @@ describe("useRequireAuth", () => {
   });
 
   it("does not redirect while auth is loading", () => {
-    mockUseAuth.mockReturnValue({ token: null, isLoading: true });
+    mockUseAuth.mockReturnValue({ token: null, isAuthLoading: true });
     render(<Probe />);
     expect(screen.getByText("loading")).toBeInTheDocument();
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("redirects to /login once loading ends without a token", () => {
-    mockUseAuth.mockReturnValue({ token: null, isLoading: false });
+    mockUseAuth.mockReturnValue({ token: null, isAuthLoading: false });
     render(<Probe />);
     expect(mockReplace).toHaveBeenCalledTimes(1);
     expect(mockReplace).toHaveBeenCalledWith("/login");
@@ -45,14 +45,14 @@ describe("useRequireAuth", () => {
 
   it("keeps the current path in ?next= when redirecting", () => {
     mockPathname = "/boards/x";
-    mockUseAuth.mockReturnValue({ token: null, isLoading: false });
+    mockUseAuth.mockReturnValue({ token: null, isAuthLoading: false });
     render(<Probe />);
     expect(mockReplace).toHaveBeenCalledTimes(1);
     expect(mockReplace).toHaveBeenCalledWith("/login?next=%2Fboards%2Fx");
   });
 
   it("does not redirect when a token is present", () => {
-    mockUseAuth.mockReturnValue({ token: "test-token", isLoading: false });
+    mockUseAuth.mockReturnValue({ token: "test-token", isAuthLoading: false });
     render(<Probe />);
     expect(screen.getByText("signed in")).toBeInTheDocument();
     expect(mockReplace).not.toHaveBeenCalled();

@@ -38,7 +38,7 @@ function setupAuth(token: string | null = "tok") {
   mockUseAuth.mockReturnValue({
     currentUser: { id: "u-1", email: "alice@example.com", name: "Alice", role: "member", timezone: "UTC" },
     token,
-    isLoading: false,
+    isAuthLoading: false,
     login: jest.fn(),
     logout: jest.fn(),
     updateProfile: jest.fn(),

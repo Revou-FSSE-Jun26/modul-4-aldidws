@@ -42,7 +42,7 @@ describe("MyTasksList", () => {
     mockReplace.mockReset();
     fetchMock.mockReset();
     global.fetch = fetchMock as unknown as typeof fetch;
-    (useAuth as jest.Mock).mockReturnValue({ token: "tok", isLoading: false });
+    (useAuth as jest.Mock).mockReturnValue({ token: "tok", isAuthLoading: false });
   });
 
   it("groups cards by board with links and column badges", async () => {
@@ -161,7 +161,7 @@ describe("MyTasksList", () => {
   });
 
   it("redirects to login and sends no request without a token", () => {
-    (useAuth as jest.Mock).mockReturnValue({ token: null, isLoading: false });
+    (useAuth as jest.Mock).mockReturnValue({ token: null, isAuthLoading: false });
     render(<MyTasksList />);
     expect(mockReplace).toHaveBeenCalledWith("/login?next=%2Fmy-tasks");
     expect(fetchMock).not.toHaveBeenCalled();

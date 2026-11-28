@@ -70,7 +70,7 @@ function setupAuth() {
       timezone: "UTC",
     },
     token: "tok",
-    isLoading: false,
+    isAuthLoading: false,
     login: jest.fn(),
     logout: jest.fn(),
     updateProfile: jest.fn(),

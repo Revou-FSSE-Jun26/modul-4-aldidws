@@ -108,7 +108,7 @@ describe("BoardDetailView", () => {
     global.fetch = fetchMock as unknown as typeof fetch;
     mockUseAuth.mockReturnValue({
       token: "test-token",
-      isLoading: false,
+      isAuthLoading: false,
       currentUser: { id: "u-1", email: "a@b.co", name: "Ann", role: "user", timezone: "UTC" },
     });
   });
@@ -375,7 +375,7 @@ describe("BoardDetailView", () => {
 
   describe("loading, auth and errors", () => {
     it("shows loading state and does not redirect or fetch while auth loads", () => {
-      mockUseAuth.mockReturnValue({ token: null, isLoading: true });
+      mockUseAuth.mockReturnValue({ token: null, isAuthLoading: true });
       render(<BoardDetailView boardId="b-1" />);
       expect(screen.getByLabelText(/loading board/i)).toBeInTheDocument();
       expect(mockReplace).not.toHaveBeenCalled();
@@ -384,7 +384,7 @@ describe("BoardDetailView", () => {
 
     // Rewritten: the guard now sends the user to /login?next=<path> so login can return here.
     it("redirects to /login?next= after auth finishes loading without a token", () => {
-      mockUseAuth.mockReturnValue({ token: null, isLoading: false });
+      mockUseAuth.mockReturnValue({ token: null, isAuthLoading: false });
       render(<BoardDetailView boardId="b-1" />);
       expect(mockReplace).toHaveBeenCalledTimes(1);
       expect(mockReplace).toHaveBeenCalledWith("/login?next=%2Fboards%2Fb-1");
@@ -463,7 +463,7 @@ describe("BoardDetailView", () => {
     });
 
     it("redirects to /login?next= when the API returns 401", async () => {
-      mockUseAuth.mockReturnValue({ token: "expired", isLoading: false });
+      mockUseAuth.mockReturnValue({ token: "expired", isAuthLoading: false });
       routeFetch(fetchMock, { [BOARD_GET]: jsonResponse(401, {}) });
       render(<BoardDetailView boardId="b-1" />);
       await waitFor(() =>

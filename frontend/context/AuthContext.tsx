@@ -4,10 +4,13 @@ import {
   createContext,
   useContext,
   useState,
+  useEffect,
   type ReactNode,
 } from "react";
 import { login as loginRequest } from "@/lib/services/authService";
-import type { User } from "@/lib/types/api";
+import { apiClient } from "@/lib/apiClient";
+import { apiPaths } from "@/lib/apiPaths";
+import type { User, LoginResult } from "@/lib/types/api";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -19,8 +22,11 @@ interface AuthContextValue {
   currentUser: AuthUser | null;
   /** In-memory access token. NEVER stored in localStorage or sessionStorage. */
   token: string | null;
-  /** Always false: nothing async runs on mount (the backend has no refresh endpoint). */
-  isLoading: boolean;
+  /**
+   * True while AuthContext is performing the initial silent refresh on mount.
+   * useRequireAuth waits for this to be false before redirecting to /login.
+   */
+  isAuthLoading: boolean;
   login(email: string, password: string): Promise<void>;
   logout(): Promise<void>;
   /** Merges server-confirmed profile fields into the in-memory user. */
@@ -40,10 +46,35 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const isLoading = false;
+  // Start as true so useRequireAuth does not redirect before the refresh
+  // attempt settles.
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+  // On mount: attempt a silent refresh using the HttpOnly cookie.
+  // If the cookie is absent or invalid, the user stays logged out and
+  // isAuthLoading is set to false so useRequireAuth can redirect them.
+  useEffect(() => {
+    apiClient<LoginResult>(apiPaths.refresh(), {
+      method: "POST",
+      credentials: "include",
+    })
+      .then((data) => {
+        setToken(data.access_token);
+        setCurrentUser(data.user);
+      })
+      .catch(() => {
+        // No valid refresh token — stay logged out. Do not redirect here;
+        // useRequireAuth handles that once isAuthLoading is false.
+      })
+      .finally(() => {
+        setIsAuthLoading(false);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount only.
 
   async function login(email: string, password: string): Promise<void> {
-    // The refresh token in the response is intentionally discarded.
+    // The refresh token in the response body is kept for backward compat but
+    // the authoritative copy now travels as an HttpOnly cookie set by the backend.
     const data = await loginRequest(email, password);
 
     setToken(data.access_token);
@@ -51,8 +82,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout(): Promise<void> {
-    // The backend has no logout endpoint, so this only clears client state.
-    // The access token stays valid until it expires.
+    // Ask the backend to revoke the refresh token and clear the HttpOnly cookie.
+    // We swallow errors here because the user is logging out regardless.
+    try {
+      await apiClient<void>(apiPaths.logout(), {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Ignore — clear local state regardless of server response.
+    }
+
     setToken(null);
     setCurrentUser(null);
   }
@@ -66,7 +106,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ currentUser, token, isLoading, login, logout, updateProfile }}
+      value={{
+        currentUser,
+        token,
+        isAuthLoading,
+        login,
+        logout,
+        updateProfile,
+      }}
     >
       {children}
     </AuthContext.Provider>

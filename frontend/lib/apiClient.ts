@@ -101,6 +101,12 @@ export interface ApiClientOptions {
   cache?: RequestCache;
   /** Next.js ISR revalidation interval in seconds. */
   next?: NextFetchRequestConfig;
+  /**
+   * Fetch credentials mode. Defaults to "same-origin".
+   * Pass "include" for cross-origin requests that must carry cookies
+   * (e.g. the /api/auth/refresh call that sends the HttpOnly cookie).
+   */
+  credentials?: RequestCredentials;
 }
 
 /** Subset of Next.js fetch config exposed through the wrapper. */
@@ -155,6 +161,7 @@ export async function requestEnvelope<T, M = PageMeta>(
     on401,
     cache,
     next,
+    credentials,
   } = opts;
 
   // ---- Build headers -------------------------------------------------------
@@ -177,6 +184,7 @@ export async function requestEnvelope<T, M = PageMeta>(
     // Per frontend.md §7.3: opt out of caching for authenticated requests to
     // prevent one user's data being served to another user.
     cache: cache ?? (token ? "no-store" : "default"),
+    credentials: credentials ?? "same-origin",
   };
 
   if (body !== undefined) {

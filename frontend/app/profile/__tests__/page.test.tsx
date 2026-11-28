@@ -31,7 +31,7 @@ describe("ProfilePage", () => {
     (useAuth as jest.Mock).mockReturnValue({
       token: "tok",
       currentUser: user,
-      isLoading: false,
+      isAuthLoading: false,
       updateProfile: mockUpdateProfile,
     });
   });
@@ -109,7 +109,7 @@ describe("ProfilePage", () => {
     (useAuth as jest.Mock).mockReturnValue({
       token: null,
       currentUser: null,
-      isLoading: false,
+      isAuthLoading: false,
       updateProfile: mockUpdateProfile,
     });
     render(<ProfilePage />);

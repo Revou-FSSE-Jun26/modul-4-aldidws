@@ -26,7 +26,7 @@ const POLL_INTERVAL_MS = 30_000;
  * `error`, never swallowed.
  */
 export function useNotifications(): UseNotificationsReturn {
-  const { token, isLoading: isAuthLoading } = useAuth();
+  const { token, isAuthLoading } = useAuth();
 
   const [notifications, setNotifications] = useState<ApiNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
