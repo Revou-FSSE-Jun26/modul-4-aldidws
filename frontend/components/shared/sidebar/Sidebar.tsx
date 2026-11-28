@@ -8,17 +8,16 @@ import {
   ChevronLeft,
   ChevronRight,
   Grid2X2,
+  LogOut,
   Plus,
   Star,
   X,
   Loader2,
-  UserRound,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { useAuth } from "@/context/AuthContext";
 import { SidebarNav } from "./SidebarNav";
-import { ActionMenu } from "@/components/shared/ActionMenu";
 
 import { get } from "@/lib/apiClient";
 import { apiPaths } from "@/lib/apiPaths";
@@ -135,6 +134,7 @@ export function Sidebar(_props: SidebarProps) {
   const [creating, setCreating] = useState(false);
 
   const [updatingFavorites, setUpdatingFavorites] = useState<string[]>([]);
+  const [signingOut, setSigningOut] = useState(false);
 
   const handleUnauthorized = useCallback(() => {
     void logout();
@@ -268,27 +268,18 @@ export function Sidebar(_props: SidebarProps) {
   }
 
   async function handleSignOut() {
+    if (signingOut) return;
+
     try {
+      setSigningOut(true);
       await logout();
       toast.success("Signed out successfully.");
       router.replace("/login");
     } catch {
       toast.error("Unable to sign out.");
+      setSigningOut(false);
     }
   }
-
-  const userMenuItems = [
-    {
-      id: "profile",
-      label: "Profile",
-      onSelect: () => router.push("/profile"),
-    },
-    {
-      id: "sign-out",
-      label: "Sign out",
-      onSelect: () => void handleSignOut(),
-    },
-  ];
 
   return (
     <>
@@ -637,12 +628,20 @@ export function Sidebar(_props: SidebarProps) {
                 </div>
               )}
 
-              <ActionMenu
-                label={`User menu for ${currentUser.name || "User"}`}
-                items={userMenuItems}
-                symbolNode={<UserRound size={15} strokeWidth={1.8} />}
-                triggerClassName="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-white transition-colors hover:bg-[#285346] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DCEBC0]"
-              />
+              <button
+                type="button"
+                onClick={() => void handleSignOut()}
+                disabled={signingOut}
+                aria-label="Sign out"
+                title="Sign out"
+                className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-white transition-colors hover:bg-[#285346] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DCEBC0] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {signingOut ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : (
+                  <LogOut size={15} strokeWidth={1.8} />
+                )}
+              </button>
             </div>
           </div>
         )}
